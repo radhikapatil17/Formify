@@ -1,0 +1,28 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# macOS
+.DS_Store
+
+# Uploaded/generated files
+uploads/*
+backend/*.csv
+
+# IDE
+.vscode/
+.idea/
+
+# Backend uploaded files
+backend/uploads/*
