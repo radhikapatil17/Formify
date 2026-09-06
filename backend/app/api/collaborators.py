@@ -76,7 +76,7 @@ def invite_collaborator(
     db.refresh(new_collaborator)
 
     # Dispatch Collaboration Invitation Email
-    frontend_base = (os.getenv("FRONTEND_URL") or "http://localhost:5173").rstrip("/")
+    frontend_base = (os.getenv("FRONTEND_URL") or "https://formify-studio.netlify.app").rstrip("/")
     dashboard_url = f"{frontend_base}/dashboard"
 
     try:

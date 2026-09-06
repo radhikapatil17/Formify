@@ -18,6 +18,8 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: 1440
       - key: FRONTEND_URL
-        sync: false
+        value: https://formify-studio.netlify.app
+      - key: BACKEND_URL
+        value: https://formify-ljk2.onrender.com
       - key: GEMINI_API_KEY
         sync: false

@@ -29,7 +29,7 @@ def share_form_via_email(
         )
 
     # 2. Determine public URL
-    frontend_base = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    frontend_base = os.getenv("FRONTEND_URL", "https://formify-studio.netlify.app").rstrip("/")
     public_url = payload.public_url or f"{frontend_base}/public/form/{form.id}"
 
     # 3. Dispatch Email

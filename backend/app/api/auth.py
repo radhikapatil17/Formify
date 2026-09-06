@@ -229,7 +229,7 @@ def forgot_password(
     token = str(uuid.uuid4())
     _reset_tokens[token] = str(body.email)
 
-    frontend_origin = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    frontend_origin = os.getenv("FRONTEND_URL", "https://formify-studio.netlify.app").rstrip("/")
     reset_link = f"{frontend_origin}/reset-password?token={token}"
 
     is_test = request.headers.get("X-Test-Request") == "true"

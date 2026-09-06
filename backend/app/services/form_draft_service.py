@@ -62,7 +62,7 @@ def save_or_update_draft(
 
     saved_time_str = draft.updated_at.strftime("%I:%M %p, %b %d") if draft.updated_at else "Just now"
 
-    frontend_base = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    frontend_base = os.getenv("FRONTEND_URL", "https://formify-studio.netlify.app").rstrip("/")
     resume_url = f"{frontend_base}/public/forms/{public_link}?resume={draft.resume_token}"
 
     return SaveDraftResponse(

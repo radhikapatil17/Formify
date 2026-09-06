@@ -10,10 +10,13 @@ import ErrorBoundary from "./components/common/ErrorBoundary";
 
 import "./index.css";
 
-const rawClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").replace(/['"]/g, "").trim();
+// Read Google OAuth Client ID dynamically from environment variables (Netlify / .env)
+const envClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").replace(/['"]/g, "").trim();
+
+// Use configured environment Client ID; fallback prevents app crash if Google OAuth is unconfigured
 const GOOGLE_CLIENT_ID =
-  rawClientId && rawClientId !== "YOUR_GOOGLE_CLIENT_ID_HERE"
-    ? rawClientId
+  envClientId && envClientId !== "YOUR_GOOGLE_CLIENT_ID_HERE"
+    ? envClientId
     : "1234567890-demo.apps.googleusercontent.com";
 
 ReactDOM.createRoot(document.getElementById("root")).render(

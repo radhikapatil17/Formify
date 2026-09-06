@@ -96,10 +96,11 @@ app = FastAPI(
 # ----------------------------
 import os
 
-frontend_url_env = os.getenv("FRONTEND_URL", "")
+frontend_url_env = os.getenv("FRONTEND_URL", "https://formify-studio.netlify.app")
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
 
 origins = [
+    "https://formify-studio.netlify.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
