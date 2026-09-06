@@ -23,11 +23,14 @@ import {
   Skeleton,
   Tooltip,
   IconButton,
+  Stack,
+  InputAdornment,
 } from "@mui/material";
 import toast from "react-hot-toast";
 
 // Icons
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import ClearRoundedIcon from "@mui/icons-material/ClearRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import FileUploadRoundedIcon from "@mui/icons-material/FileUploadRounded";
@@ -41,26 +44,31 @@ import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import InboxRoundedIcon from "@mui/icons-material/InboxRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import WarningRoundedIcon from "@mui/icons-material/WarningRounded";
+import VerifiedRoundedIcon from "@mui/icons-material/VerifiedRounded";
+import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
+import FormatListNumberedRoundedIcon from "@mui/icons-material/FormatListNumberedRounded";
 
 import StatCard from "../../components/dashboard/StatCard";
 import TemplateCard from "../../components/templates/TemplateCard";
 import AiGeneratorDialog from "../../components/templates/AiGeneratorDialog";
 import ImportTemplateModal from "../../components/templates/ImportTemplateModal";
+import PageHeader from "../../components/common/PageHeader";
 import api from "../../api/api";
 
 const CATEGORIES = [
   "All",
+  "Official Library",
   "My Templates",
   "Feedback",
+  "Registration",
   "Survey",
   "Quiz",
-  "Registration",
   "Job Application",
   "Contact Form",
   "Event Registration",
 ];
 
-const ITEMS_PER_PAGE = 6;
+const ITEMS_PER_PAGE = 9;
 
 export default function Templates() {
   const navigate = useNavigate();
@@ -69,7 +77,7 @@ export default function Templates() {
   const [templates, setTemplates] = useState([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [sortBy, setSortBy] = useState("newest");
+  const [sortBy, setSortBy] = useState("popular");
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
   const [page, setPage] = useState(1);
 
@@ -112,7 +120,7 @@ export default function Templates() {
   // Share Modal state
   const [shareUrl, setShareUrl] = useState(null);
 
-  // Fetch templates from backend database using 13 REST API endpoints
+  // Fetch templates from backend database
   const loadTemplates = useCallback(async () => {
     try {
       setLoading(true);
@@ -153,10 +161,12 @@ export default function Templates() {
   const filteredTemplates = useMemo(() => {
     let result = [...templates];
 
-    if (selectedCategory === "My Templates") {
+    if (selectedCategory === "Official Library") {
+      result = result.filter((t) => !t.is_custom);
+    } else if (selectedCategory === "My Templates") {
       result = result.filter((t) => t.is_custom);
     } else if (selectedCategory !== "All") {
-      result = result.filter((t) => t.category.toLowerCase() === selectedCategory.toLowerCase());
+      result = result.filter((t) => (t.category || "").toLowerCase().includes(selectedCategory.toLowerCase()));
     }
 
     if (search.trim()) {
@@ -170,10 +180,10 @@ export default function Templates() {
       );
     }
 
-    if (sortBy === "newest") {
-      result.sort((a, b) => (b.id || 0) - (a.id || 0));
-    } else if (sortBy === "popular") {
+    if (sortBy === "popular") {
       result.sort((a, b) => (b.usage_count || 0) - (a.usage_count || 0));
+    } else if (sortBy === "newest") {
+      result.sort((a, b) => (b.id || 0) - (a.id || 0));
     } else if (sortBy === "title") {
       result.sort((a, b) => a.title.localeCompare(b.title));
     }
@@ -194,8 +204,8 @@ export default function Templates() {
 
   // Statistics Calculations from Backend
   const totalCount = templates.length;
+  const officialCount = templates.filter((t) => !t.is_custom).length;
   const myTemplatesCount = templates.filter((t) => t.is_custom).length;
-  const publicTemplatesCount = templates.filter((t) => !t.is_custom || t.is_public).length;
   const recentlyUsedCount = recentlyUsed.length;
 
   // 1-Click Instantiate Form from Template (Backend POST /templates/use)
@@ -207,7 +217,7 @@ export default function Templates() {
       setRecentlyUsed((prev) => Array.from(new Set([template.id, ...prev])));
       localStorage.setItem("formify_recent_templates", JSON.stringify(Array.from(new Set([template.id, ...recentlyUsed]))));
 
-      toast.success(`Form created from ${template.title}!`);
+      toast.success(`Form created from "${template.title}"!`);
       setPreviewTemplate(null);
       navigate(`/create-form?id=${res.data.form_id}`);
     } catch (err) {
@@ -341,212 +351,301 @@ export default function Templates() {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3.5, pb: 6, width: "100%" }}>
       {/* ─────────────────────────────────────────────────────────────
-          1. BREADCRUMBS & PAGE HEADER
+          1. PAGE HEADER
          ───────────────────────────────────────────────────────────── */}
-      <Box display="flex" flexDirection="column" gap={0.5}>
-        <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: "-0.03em", color: "#0F172A" }}>
-          Templates
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B" }}>
-          Browse, create, edit, and share custom form templates across your workspace
-        </Typography>
-      </Box>
+      <PageHeader
+        title="Template Marketplace"
+        subtitle="Explore curated templates or start from your own custom blueprints"
+        actions={
+          <Stack direction="row" spacing={1.5}>
+            <Button
+              variant="outlined"
+              startIcon={<FileUploadRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => setOpenImportModal(true)}
+              sx={{ fontWeight: 700, fontSize: "0.825rem", borderRadius: 2.5, borderColor: "#E2E8F0" }}
+            >
+              Import JSON
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<AddRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => setOpenCreateModal(true)}
+              sx={{ fontWeight: 700, fontSize: "0.825rem", borderRadius: 2.5, borderColor: "#CBD5E1", color: "#0F172A" }}
+            >
+              New Custom
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 16, color: "#FFFFFF" }} />}
+              onClick={() => setOpenAiModal(true)}
+              sx={{
+                fontWeight: 700,
+                fontSize: "0.825rem",
+                borderRadius: 2.5,
+                background: "linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)",
+                "&:hover": { background: "linear-gradient(135deg, #4338CA 0%, #6D28D9 100%)" },
+                boxShadow: "0 4px 12px rgba(79, 70, 229, 0.25)",
+              }}
+            >
+              Build with AI
+            </Button>
+          </Stack>
+        }
+      />
 
       {/* ─────────────────────────────────────────────────────────────
-          2. CONTROL BAR (SEARCH, DROPDOWNS, TOGGLE & ACTION BUTTONS)
-         ───────────────────────────────────────────────────────────── */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2,
-          border: "1px solid #E2E8F0",
-          borderRadius: 3,
-          bgcolor: "#FFFFFF",
-          boxShadow: "0 2px 8px -2px rgba(15, 23, 42, 0.03)",
-          display: "flex",
-          flexDirection: { xs: "column", lg: "row" },
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 2,
-        }}
-      >
-        {/* Left Side: Search & Filter Dropdowns */}
-        <Box display="flex" flexWrap="wrap" alignItems="center" gap={1.5} sx={{ width: { xs: "100%", lg: "auto" } }}>
-          <Paper
-            elevation={0}
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              width: { xs: "100%", sm: 260 },
-              bgcolor: "#F8FAFC",
-              border: "1px solid #E2E8F0",
-              borderRadius: 2,
-              px: 1.5,
-              py: 0.5,
-            }}
-          >
-            <SearchRoundedIcon sx={{ color: "#94A3B8", fontSize: 18, mr: 1 }} />
-            <TextField
-              variant="standard"
-              placeholder="Search name, tags, description..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              InputProps={{ disableUnderline: true, sx: { fontSize: "0.825rem", color: "#0F172A" } }}
-            />
-          </Paper>
-
-          <TextField
-            select
-            size="small"
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            sx={{ minWidth: 160, "& .MuiInputBase-root": { fontSize: "0.825rem", borderRadius: 2 } }}
-          >
-            {CATEGORIES.map((cat) => (
-              <MenuItem key={cat} value={cat} sx={{ fontSize: "0.825rem" }}>
-                {cat}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <TextField
-            select
-            size="small"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            sx={{ minWidth: 140, "& .MuiInputBase-root": { fontSize: "0.825rem", borderRadius: 2 } }}
-          >
-            <MenuItem value="newest" sx={{ fontSize: "0.825rem" }}>Newest</MenuItem>
-            <MenuItem value="popular" sx={{ fontSize: "0.825rem" }}>Most Uses</MenuItem>
-            <MenuItem value="title" sx={{ fontSize: "0.825rem" }}>Title A-Z</MenuItem>
-          </TextField>
-
-          <ToggleButtonGroup
-            value={viewMode}
-            exclusive
-            onChange={(e, next) => next && setViewMode(next)}
-            size="small"
-            sx={{ bgcolor: "#F8FAFC", borderRadius: 2 }}
-          >
-            <ToggleButton value="grid" sx={{ px: 1.2, py: 0.5 }}>
-              <Tooltip title="Grid View">
-                <GridViewRoundedIcon sx={{ fontSize: 18, color: viewMode === "grid" ? "#4F46E5" : "#64748B" }} />
-              </Tooltip>
-            </ToggleButton>
-            <ToggleButton value="list" sx={{ px: 1.2, py: 0.5 }}>
-              <Tooltip title="List View">
-                <FormatListBulletedRoundedIcon sx={{ fontSize: 18, color: viewMode === "list" ? "#4F46E5" : "#64748B" }} />
-              </Tooltip>
-            </ToggleButton>
-          </ToggleButtonGroup>
-        </Box>
-
-        {/* Right Side: Action Buttons */}
-        <Box display="flex" flexWrap="wrap" alignItems="center" gap={1.2} sx={{ width: { xs: "100%", lg: "auto" } }}>
-          <Button
-            variant="outlined"
-            onClick={() => setOpenAiModal(true)}
-            startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 16, color: "#8B5CF6" }} />}
-            sx={{
-              borderColor: "#DDD6FE",
-              color: "#6D28D9",
-              bgcolor: "#F5F3FF",
-              fontWeight: 700,
-              fontSize: "0.8rem",
-              borderRadius: 2,
-              textTransform: "none",
-              "&:hover": { bgcolor: "#EDE9FE", borderColor: "#C4B5FD" },
-            }}
-          >
-            AI Generate Template
-          </Button>
-
-          <Button
-            variant="contained"
-            onClick={() => setOpenCreateModal(true)}
-            startIcon={<AddRoundedIcon sx={{ fontSize: 16 }} />}
-            sx={{
-              bgcolor: "#4F46E5",
-              fontWeight: 700,
-              fontSize: "0.8rem",
-              borderRadius: 2,
-              textTransform: "none",
-              boxShadow: "0 2px 8px rgba(79, 70, 229, 0.25)",
-              "&:hover": { bgcolor: "#4338CA" },
-            }}
-          >
-            Create Template
-          </Button>
-
-          <Button
-            variant="outlined"
-            onClick={() => setOpenImportModal(true)}
-            startIcon={<FileUploadRoundedIcon sx={{ fontSize: 16 }} />}
-            sx={{
-              borderColor: "#E2E8F0",
-              color: "#0F172A",
-              fontWeight: 700,
-              fontSize: "0.8rem",
-              borderRadius: 2,
-              textTransform: "none",
-              "&:hover": { bgcolor: "#F8FAFC", borderColor: "#CBD5E1" },
-            }}
-          >
-            Import Template
-          </Button>
-        </Box>
-      </Paper>
-
-      {/* ─────────────────────────────────────────────────────────────
-          3. REAL BACKEND STATISTICS CARDS
+          2. METRICS OVERVIEW (SINGLE ROW)
          ───────────────────────────────────────────────────────────── */}
       <Grid container spacing={2.5}>
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard title="Total Templates" value={totalCount} subtitle="Available form schemas" icon={<LayersRoundedIcon sx={{ fontSize: 20 }} />} color="#4F46E5" bg="#EEF2FF" />
+          <StatCard
+            title="Total Templates"
+            value={totalCount}
+            subtitle="Library & custom schemas"
+            icon={<LayersRoundedIcon sx={{ fontSize: 20 }} />}
+            color="#4F46E5"
+            bg="#EEF2FF"
+            trend="Live"
+            trendType="neutral"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard title="My Templates" value={myTemplatesCount} subtitle="Custom user templates" icon={<PersonRoundedIcon sx={{ fontSize: 20 }} />} color="#10B981" bg="#ECFDF5" />
+          <StatCard
+            title="Official Curated"
+            value={officialCount}
+            subtitle="Ready-to-deploy templates"
+            icon={<PublicRoundedIcon sx={{ fontSize: 20 }} />}
+            color="#10B981"
+            bg="#ECFDF5"
+            trend="Verified"
+            trendType="success"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard title="Public Templates" value={publicTemplatesCount} subtitle="Shared gallery templates" icon={<PublicRoundedIcon sx={{ fontSize: 20 }} />} color="#3B82F6" bg="#EFF6FF" />
+          <StatCard
+            title="My Templates"
+            value={myTemplatesCount}
+            subtitle="Saved custom blueprints"
+            icon={<PersonRoundedIcon sx={{ fontSize: 20 }} />}
+            color="#3B82F6"
+            bg="#EFF6FF"
+            trend="Custom"
+            trendType="info"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard title="Recently Used" value={recentlyUsedCount} subtitle="Instantiated in project" icon={<HistoryRoundedIcon sx={{ fontSize: 20 }} />} color="#F59E0B" bg="#FFFBEB" />
+          <StatCard
+            title="Recently Used"
+            value={recentlyUsedCount}
+            subtitle="Instantiated in projects"
+            icon={<HistoryRoundedIcon sx={{ fontSize: 20 }} />}
+            color="#F59E0B"
+            bg="#FFFBEB"
+            trend="Active"
+            trendType="warning"
+          />
         </Grid>
       </Grid>
 
       {/* ─────────────────────────────────────────────────────────────
-          4. RESPONSIVE TEMPLATES GALLERY (SKELETON, EMPTY STATE, GRID/LIST)
+          3. SEARCH & CONTROLS TOOLBAR
+         ───────────────────────────────────────────────────────────── */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2.5,
+          border: "1px solid #E2E8F0",
+          borderRadius: 3.5,
+          bgcolor: "#FFFFFF",
+          boxShadow: "0 2px 8px -2px rgba(15, 23, 42, 0.03)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+        }}
+      >
+        {/* Top Controls: Search Input + Sort + View Mode */}
+        <Box display="flex" flexWrap="wrap" alignItems="center" justifyContent="space-between" gap={2}>
+          <Box sx={{ flex: { xs: "1 1 100%", md: "1 1 360px" }, maxWidth: { md: 480 } }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Search templates by title, description, or tags..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRoundedIcon sx={{ color: "#94A3B8", fontSize: 20 }} />
+                  </InputAdornment>
+                ),
+                endAdornment: search ? (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setSearch("")} edge="end">
+                      <ClearRoundedIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+                sx: { borderRadius: 2.5, bgcolor: "#F8FAFC", fontSize: "0.85rem" },
+              }}
+            />
+          </Box>
+
+          <Box display="flex" alignItems="center" gap={1.5}>
+            <TextField
+              select
+              size="small"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              sx={{ minWidth: 150, "& .MuiInputBase-root": { fontSize: "0.825rem", borderRadius: 2.5 } }}
+            >
+              <MenuItem value="popular" sx={{ fontSize: "0.825rem" }}>Most Popular</MenuItem>
+              <MenuItem value="newest" sx={{ fontSize: "0.825rem" }}>Newest Added</MenuItem>
+              <MenuItem value="title" sx={{ fontSize: "0.825rem" }}>Title (A-Z)</MenuItem>
+            </TextField>
+
+            <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={(_, next) => next && setViewMode(next)}
+              size="small"
+              sx={{ bgcolor: "#F8FAFC", borderRadius: 2.5 }}
+            >
+              <ToggleButton value="grid" sx={{ px: 1.5, py: 0.6 }}>
+                <Tooltip title="Grid View">
+                  <GridViewRoundedIcon sx={{ fontSize: 18, color: viewMode === "grid" ? "#4F46E5" : "#64748B" }} />
+                </Tooltip>
+              </ToggleButton>
+              <ToggleButton value="list" sx={{ px: 1.5, py: 0.6 }}>
+                <Tooltip title="List View">
+                  <FormatListBulletedRoundedIcon sx={{ fontSize: 18, color: viewMode === "list" ? "#4F46E5" : "#64748B" }} />
+                </Tooltip>
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+        </Box>
+
+        {/* Category Filter Chips Bar */}
+        <Box
+          display="flex"
+          alignItems="center"
+          gap={1}
+          sx={{
+            overflowX: "auto",
+            pb: 0.5,
+            "&::-webkit-scrollbar": { height: 4 },
+            "&::-webkit-scrollbar-thumb": { bgcolor: "#E2E8F0", borderRadius: 2 },
+          }}
+        >
+          {CATEGORIES.map((cat) => {
+            const isSelected = selectedCategory === cat;
+            return (
+              <Chip
+                key={cat}
+                label={cat}
+                clickable
+                onClick={() => setSelectedCategory(cat)}
+                sx={{
+                  fontWeight: isSelected ? 800 : 600,
+                  fontSize: "0.775rem",
+                  px: 1,
+                  py: 0.4,
+                  borderRadius: 2,
+                  bgcolor: isSelected ? "#4F46E5" : "#F8FAFC",
+                  color: isSelected ? "#FFFFFF" : "#475569",
+                  border: isSelected ? "1px solid #4F46E5" : "1px solid #E2E8F0",
+                  "&:hover": {
+                    bgcolor: isSelected ? "#4338CA" : "#F1F5F9",
+                  },
+                }}
+              />
+            );
+          })}
+        </Box>
+      </Paper>
+
+      {/* Showing count indicator */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" px={0.5}>
+        <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.825rem", color: "#64748B", fontWeight: 600 }}>
+          Showing <strong>{filteredTemplates.length}</strong> {filteredTemplates.length === 1 ? "template" : "templates"}
+          {selectedCategory !== "All" && ` in ${selectedCategory}`}
+        </Typography>
+
+        {(search || selectedCategory !== "All") && (
+          <Button
+            size="small"
+            onClick={() => {
+              setSearch("");
+              setSelectedCategory("All");
+            }}
+            sx={{ textTransform: "none", fontSize: "0.75rem", fontWeight: 700, color: "#4F46E5" }}
+          >
+            Clear Filters
+          </Button>
+        )}
+      </Box>
+
+      {/* ─────────────────────────────────────────────────────────────
+          4. TEMPLATES GALLERY (GRID / LIST)
          ───────────────────────────────────────────────────────────── */}
       {loading ? (
         <Grid container spacing={3}>
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <Grid item xs={12} sm={6} md={4} key={i}>
-              <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: "1px solid #E2E8F0" }}>
-                <Skeleton variant="rectangular" height={120} sx={{ borderRadius: 2, mb: 2 }} />
+              <Paper elevation={0} sx={{ p: 3, borderRadius: 3.5, border: "1px solid #E2E8F0" }}>
+                <Skeleton variant="rectangular" height={108} sx={{ borderRadius: 2, mb: 2 }} />
                 <Skeleton variant="text" width="80%" height={28} />
                 <Skeleton variant="text" width="60%" height={20} />
                 <Skeleton variant="text" width="40%" height={20} sx={{ mb: 2 }} />
                 <Box display="flex" gap={1}>
-                  <Skeleton variant="rectangular" width="50%" height={32} sx={{ borderRadius: 1.5 }} />
-                  <Skeleton variant="rectangular" width="50%" height={32} sx={{ borderRadius: 1.5 }} />
+                  <Skeleton variant="rectangular" width="40%" height={36} sx={{ borderRadius: 2 }} />
+                  <Skeleton variant="rectangular" width="60%" height={36} sx={{ borderRadius: 2 }} />
                 </Box>
               </Paper>
             </Grid>
           ))}
         </Grid>
       ) : filteredTemplates.length === 0 ? (
-        <Paper elevation={0} sx={{ py: 8, px: 3, textAlign: "center", border: "1px dashed #CBD5E1", borderRadius: 3, bgcolor: "#FAFAFA" }}>
-          <Box sx={{ width: 64, height: 64, borderRadius: "50%", bgcolor: "#EEF2FF", color: "#4F46E5", display: "flex", alignItems: "center", justifyContent: "center", mx: "auto", mb: 2 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            py: 8,
+            px: 3,
+            textAlign: "center",
+            border: "1px dashed #CBD5E1",
+            borderRadius: 3.5,
+            bgcolor: "#FFFFFF",
+          }}
+        >
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: "50%",
+              bgcolor: "#EEF2FF",
+              color: "#4F46E5",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              mx: "auto",
+              mb: 2,
+            }}
+          >
             <InboxRoundedIcon sx={{ fontSize: 32 }} />
           </Box>
           <Typography variant="h6" fontWeight={800} sx={{ color: "#0F172A", mb: 0.5 }}>
             No templates found
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", mb: 2 }}>
-            No templates match your filters. Try searching for another term or create a new custom template.
+          <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", mb: 2.5, maxWidth: 360, mx: "auto" }}>
+            No templates match your search or selected category filter. Try clearing filters or create a new template with AI.
           </Typography>
-          <Button variant="outlined" size="small" onClick={() => { setSearch(""); setSelectedCategory("All"); }} sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2 }}>
+          <Button
+            variant="outlined"
+            onClick={() => {
+              setSearch("");
+              setSelectedCategory("All");
+            }}
+            sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2, borderColor: "#CBD5E1", color: "#4F46E5" }}
+          >
             Reset Filters
           </Button>
         </Paper>
@@ -578,7 +677,7 @@ export default function Templates() {
         </Grid>
       ) : (
         /* LIST VIEW */
-        <Paper elevation={0} sx={{ border: "1px solid #E2E8F0", borderRadius: 3, overflow: "hidden", bgcolor: "#FFFFFF" }}>
+        <Paper elevation={0} sx={{ border: "1px solid #E2E8F0", borderRadius: 3.5, overflow: "hidden", bgcolor: "#FFFFFF" }}>
           {paginatedTemplates.map((template) => (
             <TemplateCard
               key={template.id}
@@ -608,13 +707,162 @@ export default function Templates() {
           5. PAGINATION CONTROLS
          ───────────────────────────────────────────────────────────── */}
       {!loading && filteredTemplates.length > ITEMS_PER_PAGE && (
-        <Box display="flex" justifyContent="center" mt={2}>
-          <Pagination count={totalPages} page={page} onChange={(e, value) => setPage(value)} color="primary" shape="rounded" />
+        <Box display="flex" justifyContent="center" mt={3}>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={(_, value) => setPage(value)}
+            color="primary"
+            shape="rounded"
+            size="medium"
+          />
         </Box>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          6. EDIT TEMPLATE SCHEMA DIALOG
+          6. INTERACTIVE TEMPLATE PREVIEW MODAL
+         ───────────────────────────────────────────────────────────── */}
+      <Dialog
+        open={Boolean(previewTemplate)}
+        onClose={() => setPreviewTemplate(null)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3.5, overflow: "hidden" } }}
+      >
+        {previewTemplate && (
+          <>
+            <Box
+              sx={{
+                p: 3,
+                background: "linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)",
+                color: "#FFFFFF",
+              }}
+            >
+              <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <Chip
+                  label={previewTemplate.category}
+                  size="small"
+                  sx={{ bgcolor: "rgba(255, 255, 255, 0.2)", color: "#FFFFFF", fontWeight: 800, fontSize: "0.7rem" }}
+                />
+                {!previewTemplate.is_custom && (
+                  <Chip
+                    icon={<VerifiedRoundedIcon sx={{ fontSize: "12px !important", color: "#FFFFFF !important" }} />}
+                    label="Official Template"
+                    size="small"
+                    sx={{ bgcolor: "rgba(15, 23, 42, 0.35)", color: "#FFFFFF", fontWeight: 700, fontSize: "0.65rem" }}
+                  />
+                )}
+              </Box>
+
+              <Typography variant="h6" fontWeight={800} sx={{ fontSize: "1.2rem", mb: 0.5 }}>
+                {previewTemplate.title}
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9, fontSize: "0.825rem" }}>
+                {previewTemplate.description || "Streamline your response intake with this ready-to-use template schema."}
+              </Typography>
+
+              <Box display="flex" alignItems="center" gap={2} mt={2} pt={1.5} borderTop="1px solid rgba(255,255,255,0.2)">
+                <Box display="flex" alignItems="center" gap={0.5}>
+                  <FormatListNumberedRoundedIcon sx={{ fontSize: 16 }} />
+                  <Typography variant="caption" fontWeight={700}>
+                    {previewTemplate.questions?.length || 0} Questions
+                  </Typography>
+                </Box>
+                <Box display="flex" alignItems="center" gap={0.5}>
+                  <AccessTimeRoundedIcon sx={{ fontSize: 16 }} />
+                  <Typography variant="caption" fontWeight={700}>
+                    {previewTemplate.est_time || "2 mins"}
+                  </Typography>
+                </Box>
+                <Typography variant="caption" sx={{ opacity: 0.85, ml: "auto" }}>
+                  By {previewTemplate.created_by || "Formify Team"}
+                </Typography>
+              </Box>
+            </Box>
+
+            <DialogContent sx={{ p: 3, maxHeight: 380, overflowY: "auto" }}>
+              <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A", mb: 1.5 }}>
+                Included Fields &amp; Input Controls:
+              </Typography>
+
+              <List disablePadding>
+                {(previewTemplate.questions || []).map((q, idx) => (
+                  <ListItem
+                    key={idx}
+                    sx={{
+                      px: 2,
+                      py: 1.2,
+                      bgcolor: "#F8FAFC",
+                      borderRadius: 2.5,
+                      border: "1px solid #F1F5F9",
+                      mb: 1.2,
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 32, color: "#4F46E5" }}>
+                      <CheckCircleRoundedIcon sx={{ fontSize: 18 }} />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={
+                        <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
+                          <Typography variant="body2" fontWeight={700} sx={{ color: "#0F172A" }}>
+                            {q.field_label}
+                          </Typography>
+                          {q.is_required && (
+                            <Chip label="Required" size="small" sx={{ height: 18, fontSize: "0.6rem", fontWeight: 700, bgcolor: "#FEE2E2", color: "#DC2626" }} />
+                          )}
+                        </Box>
+                      }
+                      secondary={
+                        <Box mt={0.5}>
+                          <Chip
+                            label={`Type: ${q.field_type}`}
+                            size="small"
+                            sx={{ height: 20, fontSize: "0.65rem", fontWeight: 700, bgcolor: "#EEF2FF", color: "#4F46E5", mr: 1 }}
+                          />
+                          {q.options && q.options.length > 0 && (
+                            <Typography component="span" variant="caption" color="text.secondary">
+                              Options: {q.options.slice(0, 3).join(", ")}{q.options.length > 3 ? "..." : ""}
+                            </Typography>
+                          )}
+                        </Box>
+                      }
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </DialogContent>
+
+            <DialogActions sx={{ p: 2.5, bgcolor: "#FAFAFA", borderTop: "1px solid #F1F5F9" }}>
+              <Button
+                variant="outlined"
+                onClick={() => setPreviewTemplate(null)}
+                sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700, borderColor: "#CBD5E1", color: "#64748B" }}
+              >
+                Close Preview
+              </Button>
+              <Button
+                variant="contained"
+                disabled={actionLoading}
+                onClick={() => handleUseTemplate(previewTemplate)}
+                startIcon={<AddRoundedIcon sx={{ fontSize: 16 }} />}
+                sx={{
+                  borderRadius: 2,
+                  textTransform: "none",
+                  fontWeight: 700,
+                  bgcolor: "#4F46E5",
+                  "&:hover": { bgcolor: "#4338CA" },
+                  boxShadow: "0 2px 8px rgba(79, 70, 229, 0.25)",
+                }}
+              >
+                {actionLoading ? "Instantiating..." : "Use This Template"}
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+
+      {/* ─────────────────────────────────────────────────────────────
+          7. EDIT TEMPLATE SCHEMA DIALOG
          ───────────────────────────────────────────────────────────── */}
       <Dialog open={Boolean(editTemplate)} onClose={() => setEditTemplate(null)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 800, color: "#0F172A" }}>
@@ -624,7 +872,7 @@ export default function Templates() {
           <Box display="flex" flexDirection="column" gap={2} pt={1}>
             <TextField label="Template Title" fullWidth size="small" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
             <TextField select label="Category" fullWidth size="small" value={editCategory} onChange={(e) => setEditCategory(e.target.value)}>
-              {CATEGORIES.filter((c) => c !== "All" && c !== "My Templates").map((c) => (
+              {CATEGORIES.filter((c) => c !== "All" && c !== "Official Library" && c !== "My Templates").map((c) => (
                 <MenuItem key={c} value={c}>{c}</MenuItem>
               ))}
             </TextField>
@@ -640,7 +888,7 @@ export default function Templates() {
       </Dialog>
 
       {/* ─────────────────────────────────────────────────────────────
-          7. DELETE CONFIRMATION MODAL DIALOG
+          8. DELETE CONFIRMATION MODAL
          ───────────────────────────────────────────────────────────── */}
       <Dialog open={Boolean(deleteTargetId)} onClose={() => setDeleteTargetId(null)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 800, color: "#EF4444", display: "flex", alignItems: "center", gap: 1 }}>
@@ -660,7 +908,7 @@ export default function Templates() {
       </Dialog>
 
       {/* ─────────────────────────────────────────────────────────────
-          8. SHARE LINK MODAL DIALOG
+          9. SHARE LINK MODAL
          ───────────────────────────────────────────────────────────── */}
       <Dialog open={Boolean(shareUrl)} onClose={() => setShareUrl(null)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 800, color: "#0F172A" }}>
@@ -689,56 +937,7 @@ export default function Templates() {
       </Dialog>
 
       {/* ─────────────────────────────────────────────────────────────
-          9. PREVIEW SCHEMA MODAL DIALOG
-         ───────────────────────────────────────────────────────────── */}
-      <Dialog open={Boolean(previewTemplate)} onClose={() => setPreviewTemplate(null)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
-        {previewTemplate && (
-          <>
-            <DialogTitle sx={{ fontWeight: 800, color: "#0F172A" }}>
-              {previewTemplate.title} Schema Preview
-            </DialogTitle>
-            <DialogContent dividers>
-              <Typography variant="body2" color="text.secondary" paragraph>
-                {previewTemplate.description}
-              </Typography>
-              <Box display="flex" gap={1} mb={2}>
-                <Chip label={previewTemplate.category} size="small" sx={{ bgcolor: "#EEF2FF", color: "#4F46E5", fontWeight: 700 }} />
-                <Chip label={previewTemplate.version || "v1.0"} size="small" variant="outlined" sx={{ fontWeight: 600 }} />
-              </Box>
-
-              <Typography variant="caption" fontWeight={800} color="text.secondary" sx={{ display: "block", textTransform: "uppercase", mb: 1 }}>
-                Included Fields &amp; Input Types:
-              </Typography>
-              <List dense>
-                {(previewTemplate.questions || []).map((q, idx) => (
-                  <ListItem key={idx} sx={{ px: 1, py: 0.8, bgcolor: "#F8FAFC", borderRadius: 1.5, mb: 1 }}>
-                    <ListItemIcon sx={{ minWidth: 28, color: "#4F46E5" }}>
-                      <CheckCircleRoundedIcon sx={{ fontSize: 16 }} />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={q.field_label}
-                      secondary={`Type: ${q.field_type}${q.is_required ? " • Required" : ""}`}
-                      primaryTypographyProps={{ fontSize: "0.825rem", fontWeight: 700, color: "#0F172A" }}
-                      secondaryTypographyProps={{ fontSize: "0.725rem" }}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-              <Button variant="outlined" onClick={() => setPreviewTemplate(null)}>
-                Close
-              </Button>
-              <Button variant="contained" disabled={actionLoading} onClick={() => handleUseTemplate(previewTemplate)} sx={{ bgcolor: "#4F46E5", fontWeight: 700 }}>
-                {actionLoading ? "Instantiating..." : "Use This Template"}
-              </Button>
-            </DialogActions>
-          </>
-        )}
-      </Dialog>
-
-      {/* ─────────────────────────────────────────────────────────────
-          10. CREATE TEMPLATE MODAL DIALOG
+          10. CREATE CUSTOM TEMPLATE MODAL
          ───────────────────────────────────────────────────────────── */}
       <Dialog open={openCreateModal} onClose={() => setOpenCreateModal(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 800, color: "#0F172A" }}>
@@ -748,7 +947,7 @@ export default function Templates() {
           <Box display="flex" flexDirection="column" gap={2} pt={1}>
             <TextField label="Template Title" fullWidth size="small" value={newTemplateTitle} onChange={(e) => setNewTemplateTitle(e.target.value)} required />
             <TextField select label="Category" fullWidth size="small" value={newTemplateCategory} onChange={(e) => setNewTemplateCategory(e.target.value)}>
-              {CATEGORIES.filter((c) => c !== "All" && c !== "My Templates").map((c) => (
+              {CATEGORIES.filter((c) => c !== "All" && c !== "Official Library" && c !== "My Templates").map((c) => (
                 <MenuItem key={c} value={c}>{c}</MenuItem>
               ))}
             </TextField>
@@ -758,7 +957,7 @@ export default function Templates() {
         <DialogActions sx={{ p: 2 }}>
           <Button variant="outlined" onClick={() => setOpenCreateModal(false)}>Cancel</Button>
           <Button variant="contained" disabled={actionLoading} onClick={handleCreateTemplateSubmit} sx={{ bgcolor: "#4F46E5", fontWeight: 700 }}>
-            {actionLoading ? "Saving..." : "Create"}
+            {actionLoading ? "Saving..." : "Create Template"}
           </Button>
         </DialogActions>
       </Dialog>

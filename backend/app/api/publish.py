@@ -26,6 +26,8 @@ def publish(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, version_id, required_role="editor")
     version = publish_version(version_id, db)
 
     from app.models.notification import Notification
@@ -53,6 +55,8 @@ def unpublish(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, version_id, required_role="editor")
     unpublish_version(version_id, db)
 
     return PublishResponse(

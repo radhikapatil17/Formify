@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -9,12 +9,9 @@ import {
   Stack,
   MenuItem,
   TextField,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
+  InputAdornment,
+  IconButton,
+  Divider,
   LinearProgress,
   Button,
 } from "@mui/material";
@@ -26,31 +23,32 @@ import {
   CartesianGrid,
   Tooltip as ChartTooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
   AreaChart,
   Area,
 } from "recharts";
 import toast from "react-hot-toast";
 
 // Icons
-import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
-import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import ClearRoundedIcon from "@mui/icons-material/ClearRounded";
+import StarRoundedIcon from "@mui/icons-material/StarRounded";
+import NumbersRoundedIcon from "@mui/icons-material/NumbersRounded";
+import RadioButtonCheckedRoundedIcon from "@mui/icons-material/RadioButtonCheckedRounded";
+import TextFieldsRoundedIcon from "@mui/icons-material/TextFieldsRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 import AssignmentRoundedIcon from "@mui/icons-material/AssignmentRounded";
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
-import PieChartRoundedIcon from "@mui/icons-material/PieChartRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
-import FilterListRoundedIcon from "@mui/icons-material/FilterListRounded";
-import CalendarTodayRoundedIcon from "@mui/icons-material/CalendarTodayRounded";
 import QuestionAnswerRoundedIcon from "@mui/icons-material/QuestionAnswerRounded";
 import InboxRoundedIcon from "@mui/icons-material/InboxRounded";
+import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
+import LayersRoundedIcon from "@mui/icons-material/LayersRounded";
 
 import api from "../../api/api";
 import StatCard from "../../components/dashboard/StatCard";
-
-const PIE_COLORS = ["#4F46E5", "#10B981", "#3B82F6", "#F59E0B", "#EC4899", "#8B5CF6", "#06B6D4"];
+import PageHeader from "../../components/common/PageHeader";
 
 const CustomChartTooltip = ({ active, payload, label, unit = "responses" }) => {
   if (active && payload && payload.length) {
@@ -83,6 +81,21 @@ const CustomChartTooltip = ({ active, payload, label, unit = "responses" }) => {
   return null;
 };
 
+// Helper to pick icon according to field type
+function getFieldIcon(fieldType) {
+  const t = (fieldType || "").toLowerCase();
+  if (["select", "dropdown", "radio", "checkbox"].includes(t)) {
+    return <RadioButtonCheckedRoundedIcon sx={{ fontSize: 16 }} />;
+  }
+  if (["rating", "star_rating", "scale"].includes(t)) {
+    return <StarRoundedIcon sx={{ fontSize: 16 }} />;
+  }
+  if (["number", "currency"].includes(t)) {
+    return <NumbersRoundedIcon sx={{ fontSize: 16 }} />;
+  }
+  return <TextFieldsRoundedIcon sx={{ fontSize: 16 }} />;
+}
+
 export default function Analytics() {
   const [loading, setLoading] = useState(true);
   const [forms, setForms] = useState([]);
@@ -94,6 +107,11 @@ export default function Analytics() {
   const [charts, setCharts] = useState(null);
   const [aiInsights, setAiInsights] = useState(null);
 
+  // Master-Detail State
+  const [selectedQuestionId, setSelectedQuestionId] = useState(null);
+  const [questionSearchQuery, setQuestionSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all"); // 'all', 'choice', 'text', 'rating', 'number'
+
   // Fetch User's Forms List for Selector Dropdown
   useEffect(() => {
     async function fetchForms() {
@@ -101,6 +119,10 @@ export default function Analytics() {
         const res = await api.get("/forms/");
         const formsList = res.data || [];
         setForms(formsList);
+        // Default to the first form if available to prevent mixing questions
+        if (formsList.length > 0 && !selectedFormId) {
+          setSelectedFormId(String(formsList[0].id));
+        }
       } catch (err) {
         console.error(err);
       }
@@ -127,6 +149,17 @@ export default function Analytics() {
       setOverview(overviewRes.data);
       setCharts(chartsRes.data);
       setAiInsights(insightsRes.data);
+
+      // Auto-select first question in dataset if none or current selected is not in dataset
+      const qList = chartsRes.data?.question_analytics || [];
+      if (qList.length > 0) {
+        setSelectedQuestionId((prev) => {
+          const exists = qList.some((q) => q.id === prev);
+          return exists ? prev : qList[0].id;
+        });
+      } else {
+        setSelectedQuestionId(null);
+      }
     } catch (err) {
       console.error(err);
       toast.error("Failed to load analytics metrics", { id: "analytics-err" });
@@ -139,59 +172,94 @@ export default function Analytics() {
     fetchAnalytics();
   }, [fetchAnalytics]);
 
-  const selectedFormTitle = forms.find((f) => String(f.id) === String(selectedFormId))?.title || "All Forms";
-  const questionAnalytics = charts?.question_analytics || [];
+  const selectedFormTitle = forms.find((f) => String(f.id) === String(selectedFormId))?.title || "All Forms (Overview)";
+  const rawQuestions = charts?.question_analytics || [];
+
+  // Filtered Questions for Master List
+  const filteredQuestions = useMemo(() => {
+    return rawQuestions.filter((q) => {
+      // Type Filter
+      if (typeFilter === "choice" && !["select", "dropdown", "radio", "checkbox"].includes(q.field_type)) return false;
+      if (typeFilter === "rating" && !["rating", "star_rating", "scale"].includes(q.field_type)) return false;
+      if (typeFilter === "number" && !["number", "currency"].includes(q.field_type)) return false;
+      if (typeFilter === "text" && ["select", "dropdown", "radio", "checkbox", "rating", "star_rating", "scale", "number", "currency"].includes(q.field_type)) return false;
+
+      // Search Query
+      if (!questionSearchQuery.trim()) return true;
+      const query = questionSearchQuery.toLowerCase();
+      return (
+        q.label.toLowerCase().includes(query) ||
+        q.field_type.toLowerCase().includes(query) ||
+        (q.form_title && q.form_title.toLowerCase().includes(query))
+      );
+    });
+  }, [rawQuestions, typeFilter, questionSearchQuery]);
+
+  // Selected Question Object
+  const selectedQuestion = useMemo(() => {
+    return rawQuestions.find((q) => q.id === selectedQuestionId) || filteredQuestions[0] || null;
+  }, [rawQuestions, selectedQuestionId, filteredQuestions]);
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3.5, pb: 6, width: "100%" }}>
       {/* ─────────────────────────────────────────────────────────────
-          1. HEADER & TOP FILTERS BAR (FORM SELECTOR + DATE RANGE)
+          1. PAGE HEADER & PROMINENT FORM SELECTOR
          ───────────────────────────────────────────────────────────── */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
-        <Box>
-          <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: "-0.03em", color: "#0F172A" }}>
-            Form Analytics &amp; Insights
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3, color: "#64748B" }}>
-            Performance metrics, response volume trends, and question completion rates
-          </Typography>
-        </Box>
-
-        {/* Top Filters */}
-        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
-          {/* Form Selector */}
-          <Box display="flex" alignItems="center" gap={1}>
-            <FilterListRoundedIcon sx={{ fontSize: 18, color: "#64748B" }} />
-            <TextField
-              select
-              size="small"
-              value={selectedFormId}
-              onChange={(e) => setSelectedFormId(e.target.value)}
-              sx={{ minWidth: 200, bgcolor: "#FFFFFF", borderRadius: 2 }}
-              SelectProps={{
-                sx: { fontWeight: 700, fontSize: "0.85rem" }
-              }}
-            >
-              <MenuItem value="">All Forms ({forms.length})</MenuItem>
-              {forms.map((f) => (
-                <MenuItem key={f.id} value={String(f.id)}>
-                  {f.title}
+      <PageHeader
+        title="Analytics & Insights"
+        subtitle="Performance metrics, response volume trends, and question-level completion analytics"
+        actions={
+          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+            {/* Form Selector Dropdown */}
+            <Box sx={{ minWidth: 240 }}>
+              <TextField
+                select
+                size="small"
+                fullWidth
+                value={selectedFormId}
+                onChange={(e) => {
+                  setSelectedFormId(e.target.value);
+                  setQuestionSearchQuery("");
+                }}
+                sx={{
+                  bgcolor: "background.paper",
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2.5,
+                    fontWeight: 700,
+                    fontSize: "0.85rem",
+                  },
+                }}
+                SelectProps={{
+                  displayEmpty: true,
+                  renderValue: (val) => {
+                    if (!val) return "🌐 All Forms (Overview)";
+                    const found = forms.find((f) => String(f.id) === String(val));
+                    return found ? `📋 ${found.title}` : "Select Form";
+                  },
+                }}
+              >
+                <MenuItem value="" sx={{ fontWeight: 600 }}>
+                  🌐 All Forms (Overview)
                 </MenuItem>
-              ))}
-            </TextField>
-          </Box>
+                <Divider sx={{ my: 0.5 }} />
+                {forms.map((f) => (
+                  <MenuItem key={f.id} value={String(f.id)} sx={{ fontWeight: 600, fontSize: "0.85rem" }}>
+                    📋 {f.title}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Box>
 
-          {/* Date Range Selector */}
-          <Box display="flex" alignItems="center" gap={1}>
-            <CalendarTodayRoundedIcon sx={{ fontSize: 16, color: "#64748B" }} />
+            {/* Date Range Selector */}
             <TextField
               select
               size="small"
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value)}
-              sx={{ minWidth: 140, bgcolor: "#FFFFFF", borderRadius: 2 }}
-              SelectProps={{
-                sx: { fontWeight: 600, fontSize: "0.85rem" }
+              sx={{
+                minWidth: 135,
+                bgcolor: "background.paper",
+                "& .MuiOutlinedInput-root": { borderRadius: 2.5, fontWeight: 600, fontSize: "0.85rem" },
               }}
             >
               <MenuItem value="all">All Time</MenuItem>
@@ -199,21 +267,21 @@ export default function Analytics() {
               <MenuItem value="30d">Last 30 Days</MenuItem>
               <MenuItem value="90d">Last 90 Days</MenuItem>
             </TextField>
-          </Box>
-        </Stack>
-      </Box>
+          </Stack>
+        }
+      />
 
       {/* Loading Skeleton Indicator */}
       {loading && (
-        <Box display="flex" justifyContent="center" py={4}>
-          <CircularProgress size={28} sx={{ color: "#4F46E5" }} />
+        <Box display="flex" justifyContent="center" py={6}>
+          <CircularProgress size={32} sx={{ color: "#4F46E5" }} />
         </Box>
       )}
 
       {!loading && (
         <>
           {/* ─────────────────────────────────────────────────────────────
-              2. SUMMARY KPI CARDS (4 REAL DATABASE METRICS)
+              2. SUMMARY KPI OVERVIEW CARDS
              ───────────────────────────────────────────────────────────── */}
           <Grid container spacing={2.5}>
             <Grid item xs={12} sm={6} md={3}>
@@ -266,7 +334,7 @@ export default function Analytics() {
           </Grid>
 
           {/* ─────────────────────────────────────────────────────────────
-              3. AUTOMATED AI INSIGHTS CARDS
+              3. AUTOMATED PERFORMANCE INSIGHTS CARDS
              ───────────────────────────────────────────────────────────── */}
           {aiInsights && (
             <Paper
@@ -293,36 +361,48 @@ export default function Analytics() {
                   aiInsights.highest_completion_time,
                   aiInsights.peak_submission_hours,
                   aiInsights.completion_percentage,
-                ].map((insight, idx) => (
-                  <Grid item xs={12} sm={6} md={3} key={idx}>
-                    <Paper
-                      elevation={0}
-                      sx={{
-                        p: 2.2,
-                        borderRadius: 2.5,
-                        border: "1px solid #E2E8F0",
-                        bgcolor: "#FAFAFA",
-                        height: "100%",
-                      }}
-                    >
-                      <Typography variant="caption" fontWeight={700} sx={{ color: "#64748B", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", mb: 0.5 }}>
-                        {insight?.title}
-                      </Typography>
-                      <Typography variant="subtitle1" fontWeight={800} sx={{ color: "#4F46E5", fontSize: "0.95rem", mb: 0.5 }}>
-                        {insight?.value}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ color: "#64748B", lineHeight: 1.3, display: "block" }}>
-                        {insight?.description}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                ))}
+                ]
+                  .filter(Boolean)
+                  .map((insight, idx) => (
+                    <Grid item xs={12} sm={6} md={3} key={idx}>
+                      <Paper
+                        elevation={0}
+                        sx={{
+                          p: 2.2,
+                          borderRadius: 2.5,
+                          border: "1px solid #E2E8F0",
+                          bgcolor: "#FAFAFA",
+                          height: "100%",
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
+                          fontWeight={700}
+                          sx={{
+                            color: "#64748B",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            display: "block",
+                            mb: 0.5,
+                          }}
+                        >
+                          {insight?.title}
+                        </Typography>
+                        <Typography variant="subtitle1" fontWeight={800} sx={{ color: "#4F46E5", fontSize: "0.95rem", mb: 0.5 }}>
+                          {insight?.value}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ color: "#64748B", lineHeight: 1.3, display: "block" }}>
+                          {insight?.description}
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                  ))}
               </Grid>
             </Paper>
           )}
 
           {/* ─────────────────────────────────────────────────────────────
-              4. CHARTS GRID (TIMELINE TREND + COMPLETION RATIO + DAILY BREAKDOWN)
+              4. CHARTS GRID (TIMELINE TREND + WEEKDAY BREAKDOWN)
              ───────────────────────────────────────────────────────────── */}
           <Grid container spacing={3}>
             {/* CHART 1: Response Volume Trend */}
@@ -337,14 +417,20 @@ export default function Analytics() {
                       Submissions timeline for {selectedFormTitle}
                     </Typography>
                   </Box>
-                  <Chip label={dateRange === "7d" ? "7 Days" : dateRange === "30d" ? "30 Days" : "Timeline"} size="small" sx={{ fontSize: "0.7rem", fontWeight: 700 }} />
+                  <Chip
+                    label={dateRange === "7d" ? "7 Days" : dateRange === "30d" ? "30 Days" : "Timeline"}
+                    size="small"
+                    sx={{ fontSize: "0.7rem", fontWeight: 700, bgcolor: "#EEF2FF", color: "#4F46E5" }}
+                  />
                 </Box>
 
-                <Box height={280}>
+                <Box height={260}>
                   {charts?.response_trend?.length === 0 ? (
                     <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" height="100%">
                       <InboxRoundedIcon sx={{ fontSize: 36, color: "#CBD5E1" }} />
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>No response trend data available</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                        No response trend data available
+                      </Typography>
                     </Box>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
@@ -367,7 +453,7 @@ export default function Analytics() {
               </Paper>
             </Grid>
 
-            {/* CHART 2: Daily Responses */}
+            {/* CHART 2: Daily Responses by Weekday */}
             <Grid item xs={12} lg={4}>
               <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: "1px solid #E2E8F0", bgcolor: "#FFFFFF", boxShadow: "0 4px 20px -2px rgba(15, 23, 42, 0.04)" }}>
                 <Typography variant="subtitle1" fontWeight={800} sx={{ color: "#0F172A", mb: 0.5 }}>
@@ -377,14 +463,14 @@ export default function Analytics() {
                   Submissions volume grouped by day of week
                 </Typography>
 
-                <Box height={280}>
+                <Box height={260}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={charts?.daily_responses || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
                       <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#64748B" }} />
                       <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#64748B" }} allowDecimals={false} />
                       <ChartTooltip content={<CustomChartTooltip unit="submissions" />} />
-                      <Bar dataKey="count" fill="#3B82F6" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="count" fill="#4F46E5" radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </Box>
@@ -393,146 +479,621 @@ export default function Analytics() {
           </Grid>
 
           {/* ─────────────────────────────────────────────────────────────
-              5. QUESTION-LEVEL ANALYTICS SECTION (FORM SCOPED & CLEAN)
+              5. MASTER-DETAIL QUESTION ANALYTICS SECTION
              ───────────────────────────────────────────────────────────── */}
           <Paper
             elevation={0}
             sx={{
-              borderRadius: 3,
+              borderRadius: 3.5,
               border: "1px solid #E2E8F0",
               bgcolor: "#FFFFFF",
               overflow: "hidden",
               boxShadow: "0 4px 20px -2px rgba(15, 23, 42, 0.04)",
             }}
           >
-            <Box p={3} borderBottom="1px solid #E2E8F0" display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-              <Box>
-                <Box display="flex" alignItems="center" gap={1}>
-                  <QuestionAnswerRoundedIcon sx={{ fontSize: 20, color: "#4F46E5" }} />
+            {/* Section Header */}
+            <Box
+              p={2.5}
+              px={3}
+              borderBottom="1px solid #E2E8F0"
+              display="flex"
+              justifyContent="space-between"
+              alignItems="center"
+              flexWrap="wrap"
+              gap={1.5}
+              sx={{ bgcolor: "#FAFAFA" }}
+            >
+              <Box display="flex" alignItems="center" gap={1.2}>
+                <QuestionAnswerRoundedIcon sx={{ fontSize: 22, color: "#4F46E5" }} />
+                <Box>
                   <Typography variant="h6" fontWeight={800} sx={{ color: "#0F172A", fontSize: "1.05rem" }}>
-                    Question-Level Analytics ({selectedFormTitle})
+                    Question Analytics Explorer
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ color: "#64748B" }}>
+                    Select a question from {selectedFormTitle} to view response breakdowns, rating distributions, and completion stats.
                   </Typography>
                 </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3, color: "#64748B", fontSize: "0.775rem" }}>
-                  Detailed completion rate, answer counts, and drop-off ratio per question
-                </Typography>
               </Box>
 
               <Chip
-                label={`${questionAnalytics.length} Questions`}
+                icon={<LayersRoundedIcon sx={{ fontSize: "16px !important", color: "#4F46E5 !important" }} />}
+                label={`${rawQuestions.length} Questions`}
                 size="small"
                 sx={{ fontWeight: 700, bgcolor: "#EEF2FF", color: "#4F46E5", border: "1px solid #C7D2FE" }}
               />
             </Box>
 
-            {questionAnalytics.length === 0 ? (
-              <Box py={6} textAlign="center">
+            {rawQuestions.length === 0 ? (
+              <Box py={8} textAlign="center">
                 <InboxRoundedIcon sx={{ fontSize: 44, color: "#CBD5E1" }} />
                 <Typography variant="h6" fontWeight={700} sx={{ color: "#0F172A", mt: 1 }}>
                   No questions found for this form
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", mt: 0.5 }}>
-                  Select a form with configured questions to inspect question-level completion rates.
+                <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", mt: 0.5, maxWidth: 460, mx: "auto" }}>
+                  The selected form has no configured questions or versions. Pick another form from the top dropdown to explore analytics.
                 </Typography>
               </Box>
             ) : (
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow sx={{ bgcolor: "#FAFAFA" }}>
-                      <TableCell sx={{ fontWeight: 800, fontSize: "0.75rem", color: "#64748B", letterSpacing: "0.03em" }}>
-                        QUESTION LABEL
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 800, fontSize: "0.75rem", color: "#64748B", letterSpacing: "0.03em" }}>
-                        INPUT TYPE
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 800, fontSize: "0.75rem", color: "#64748B", letterSpacing: "0.03em" }}>
-                        ANSWERED RATIO
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 800, fontSize: "0.75rem", color: "#64748B", letterSpacing: "0.03em", width: 220 }}>
-                        COMPLETION RATE
-                      </TableCell>
-                    </TableRow>
-                  </TableHead>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", md: "340px 1fr" },
+                  minHeight: 560,
+                }}
+              >
+                {/* ── LEFT RAIL: SEARCHABLE QUESTION MASTER LIST ───────────── */}
+                <Box
+                  sx={{
+                    borderRight: { xs: "none", md: "1px solid #E2E8F0" },
+                    borderBottom: { xs: "1px solid #E2E8F0", md: "none" },
+                    display: "flex",
+                    flexDirection: "column",
+                    bgcolor: "#FFFFFF",
+                  }}
+                >
+                  {/* Search Bar */}
+                  <Box p={2} borderBottom="1px solid #F1F5F9">
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Search questions..."
+                      value={questionSearchQuery}
+                      onChange={(e) => setQuestionSearchQuery(e.target.value)}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchRoundedIcon sx={{ fontSize: 18, color: "#94A3B8" }} />
+                          </InputAdornment>
+                        ),
+                        endAdornment: questionSearchQuery ? (
+                          <InputAdornment position="end">
+                            <IconButton size="small" onClick={() => setQuestionSearchQuery("")}>
+                              <ClearRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </InputAdornment>
+                        ) : null,
+                      }}
+                      sx={{
+                        "& .MuiInputBase-root": {
+                          borderRadius: 2,
+                          bgcolor: "#F8FAFC",
+                          fontSize: "0.825rem",
+                        },
+                      }}
+                    />
 
-                  <TableBody>
-                    {questionAnalytics.map((q) => (
-                      <TableRow key={q.id} hover sx={{ "& .MuiTableCell-root": { borderColor: "#F1F5F9", py: 2 } }}>
-                        <TableCell sx={{ fontWeight: 700, fontSize: "0.875rem", color: "#0F172A" }}>
-                          {q.label}
-                        </TableCell>
+                    {/* Filter Type Pills */}
+                    <Stack direction="row" spacing={0.8} mt={1.5} overflow="auto" pb={0.5}>
+                      {[
+                        { id: "all", label: "All" },
+                        { id: "choice", label: "Choices" },
+                        { id: "text", label: "Text" },
+                        { id: "rating", label: "Rating" },
+                        { id: "number", label: "Number" },
+                      ].map((t) => (
+                        <Chip
+                          key={t.id}
+                          label={t.label}
+                          size="small"
+                          clickable
+                          onClick={() => setTypeFilter(t.id)}
+                          sx={{
+                            fontSize: "0.7rem",
+                            height: 24,
+                            fontWeight: typeFilter === t.id ? 800 : 600,
+                            bgcolor: typeFilter === t.id ? "#4F46E5" : "#F1F5F9",
+                            color: typeFilter === t.id ? "#FFFFFF" : "#64748B",
+                            "&:hover": { bgcolor: typeFilter === t.id ? "#4338CA" : "#E2E8F0" },
+                          }}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
 
-                        <TableCell>
-                          <Chip
-                            label={q.field_type}
-                            size="small"
+                  {/* Question Scrollable List */}
+                  <Box
+                    sx={{
+                      flex: 1,
+                      maxHeight: { xs: 300, md: 540 },
+                      overflowY: "auto",
+                      p: 1.5,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 1,
+                    }}
+                  >
+                    {filteredQuestions.length === 0 ? (
+                      <Box py={4} textAlign="center">
+                        <Typography variant="caption" color="text.secondary">
+                          No matching questions found
+                        </Typography>
+                      </Box>
+                    ) : (
+                      filteredQuestions.map((q) => {
+                        const isSelected = selectedQuestion?.id === q.id;
+                        return (
+                          <Box
+                            key={q.id}
+                            onClick={() => setSelectedQuestionId(q.id)}
                             sx={{
-                              fontSize: "0.675rem",
-                              fontWeight: 700,
-                              textTransform: "lowercase",
-                              bgcolor: "#F1F5F9",
-                              color: "#475569",
-                              border: "1px solid #E2E8F0",
+                              p: 1.6,
+                              borderRadius: 2.5,
+                              cursor: "pointer",
+                              border: isSelected ? "1.5px solid #4F46E5" : "1px solid #E2E8F0",
+                              bgcolor: isSelected ? "#EEF2FF" : "#FFFFFF",
+                              transition: "all 0.15s ease",
+                              "&:hover": {
+                                bgcolor: isSelected ? "#EEF2FF" : "#F8FAFC",
+                                borderColor: isSelected ? "#4F46E5" : "#CBD5E1",
+                              },
                             }}
-                          />
-                        </TableCell>
+                          >
+                            <Box display="flex" alignItems="flex-start" justifyContent="space-between" gap={1}>
+                              <Typography
+                                variant="body2"
+                                fontWeight={isSelected ? 800 : 700}
+                                sx={{
+                                  color: isSelected ? "#1E1B4B" : "#0F172A",
+                                  fontSize: "0.85rem",
+                                  lineHeight: 1.35,
+                                }}
+                              >
+                                {q.label}
+                                {q.is_required && (
+                                  <Typography component="span" sx={{ color: "#EF4444", ml: 0.4 }}>
+                                    *
+                                  </Typography>
+                                )}
+                              </Typography>
+                            </Box>
 
-                        <TableCell sx={{ fontWeight: 700, fontSize: "0.85rem", color: q.has_data ? "#4F46E5" : "#94A3B8" }}>
-                          {q.answered_ratio}
-                        </TableCell>
-
-                        <TableCell align="right">
-                          <Box display="flex" flexDirection="column" alignItems="flex-end" gap={0.5}>
-                            <Typography
-                              variant="body2"
-                              fontWeight={800}
-                              sx={{
-                                fontSize: "0.85rem",
-                                color: !q.has_data
-                                  ? "#64748B"
-                                  : q.completion_pct >= 80
-                                  ? "#10B981"
-                                  : q.completion_pct >= 50
-                                  ? "#F59E0B"
-                                  : "#EF4444",
-                              }}
-                            >
-                              {q.completion_rate}
-                            </Typography>
-
-                            {q.has_data && (
-                              <Box sx={{ width: 140 }}>
-                                <LinearProgress
-                                  variant="determinate"
-                                  value={q.completion_pct}
+                            {/* Subtitle with field type, answered count, and form title if All Forms */}
+                            <Box display="flex" alignItems="center" justifyContent="space-between" mt={1}>
+                              <Box display="flex" alignItems="center" gap={0.8}>
+                                <Chip
+                                  icon={getFieldIcon(q.field_type)}
+                                  label={q.field_type}
+                                  size="small"
                                   sx={{
-                                    height: 6,
-                                    borderRadius: 3,
-                                    bgcolor: "#E2E8F0",
-                                    "& .MuiLinearProgress-bar": {
-                                      borderRadius: 3,
-                                      bgcolor:
-                                        q.completion_pct >= 80
-                                          ? "#10B981"
-                                          : q.completion_pct >= 50
-                                          ? "#F59E0B"
-                                          : "#EF4444",
-                                    },
+                                    height: 20,
+                                    fontSize: "0.65rem",
+                                    fontWeight: 700,
+                                    textTransform: "lowercase",
+                                    bgcolor: isSelected ? "#E0E7FF" : "#F1F5F9",
+                                    color: isSelected ? "#4338CA" : "#475569",
                                   }}
                                 />
+                                {!selectedFormId && q.form_title && (
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      fontSize: "0.65rem",
+                                      color: "#64748B",
+                                      fontWeight: 600,
+                                      maxWidth: 100,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {q.form_title}
+                                  </Typography>
+                                )}
                               </Box>
+
+                              <Typography
+                                variant="caption"
+                                fontWeight={800}
+                                sx={{
+                                  fontSize: "0.725rem",
+                                  color: q.has_data ? "#4F46E5" : "#94A3B8",
+                                }}
+                              >
+                                {q.answered_ratio.replace(" answered", "")}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        );
+                      })
+                    )}
+                  </Box>
+                </Box>
+
+                {/* ── RIGHT VIEWPORT: SELECTED QUESTION DETAIL ANALYTICS ──── */}
+                <Box sx={{ p: { xs: 2.5, sm: 3.5 }, bgcolor: "#FFFFFF", display: "flex", flexDirection: "column", gap: 3 }}>
+                  {selectedQuestion ? (
+                    <>
+                      {/* Mobile Question Selector (< md) */}
+                      <Box sx={{ display: { xs: "block", md: "none" }, mb: 1 }}>
+                        <TextField
+                          select
+                          fullWidth
+                          size="small"
+                          label="Select Question"
+                          value={selectedQuestion.id}
+                          onChange={(e) => setSelectedQuestionId(Number(e.target.value))}
+                          sx={{ "& .MuiInputBase-root": { borderRadius: 2 } }}
+                        >
+                          {rawQuestions.map((q) => (
+                            <MenuItem key={q.id} value={q.id}>
+                              {q.label} ({q.field_type})
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </Box>
+
+                      {/* Detail Header */}
+                      <Box display="flex" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={1.5}>
+                        <Box>
+                          <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                            <Typography variant="h6" fontWeight={800} sx={{ color: "#0F172A", fontSize: "1.15rem" }}>
+                              {selectedQuestion.label}
+                            </Typography>
+                            {selectedQuestion.is_required && (
+                              <Chip
+                                label="Required"
+                                size="small"
+                                sx={{ fontSize: "0.65rem", height: 20, fontWeight: 700, bgcolor: "#FEE2E2", color: "#DC2626" }}
+                              />
                             )}
                           </Box>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                          <Typography variant="caption" color="text.secondary" sx={{ color: "#64748B", display: "block", mt: 0.3 }}>
+                            Field Type: <strong>{selectedQuestion.field_type}</strong>
+                            {selectedQuestion.form_title && ` • Form: ${selectedQuestion.form_title}`}
+                          </Typography>
+                        </Box>
+
+                        <Chip
+                          icon={<CheckCircleRoundedIcon sx={{ fontSize: "14px !important", color: "#10B981 !important" }} />}
+                          label={`${selectedQuestion.completion_pct}% Completion`}
+                          size="small"
+                          sx={{
+                            fontWeight: 800,
+                            fontSize: "0.75rem",
+                            bgcolor: "#ECFDF5",
+                            color: "#059669",
+                            border: "1px solid #A7F3D0",
+                          }}
+                        />
+                      </Box>
+
+                      {/* Detail KPI Metrics Row */}
+                      <Grid container spacing={2}>
+                        <Grid item xs={6} sm={3}>
+                          <Paper elevation={0} sx={{ p: 2, borderRadius: 2.5, bgcolor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                            <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ textTransform: "uppercase" }}>
+                              Answered
+                            </Typography>
+                            <Typography variant="h6" fontWeight={800} sx={{ color: "#4F46E5", mt: 0.3 }}>
+                              {selectedQuestion.responses_count}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                        <Grid item xs={6} sm={3}>
+                          <Paper elevation={0} sx={{ p: 2, borderRadius: 2.5, bgcolor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                            <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ textTransform: "uppercase" }}>
+                              Unanswered
+                            </Typography>
+                            <Typography variant="h6" fontWeight={800} sx={{ color: "#64748B", mt: 0.3 }}>
+                              {selectedQuestion.unanswered_count}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                        <Grid item xs={6} sm={3}>
+                          <Paper elevation={0} sx={{ p: 2, borderRadius: 2.5, bgcolor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                            <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ textTransform: "uppercase" }}>
+                              Total Submissions
+                            </Typography>
+                            <Typography variant="h6" fontWeight={800} sx={{ color: "#0F172A", mt: 0.3 }}>
+                              {selectedQuestion.total_submissions}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                        <Grid item xs={6} sm={3}>
+                          <Paper elevation={0} sx={{ p: 2, borderRadius: 2.5, bgcolor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                            <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ textTransform: "uppercase" }}>
+                              Drop-off Rate
+                            </Typography>
+                            <Typography
+                              variant="h6"
+                              fontWeight={800}
+                              sx={{
+                                mt: 0.3,
+                                color: selectedQuestion.completion_pct >= 80 ? "#10B981" : "#F59E0B",
+                              }}
+                            >
+                              {selectedQuestion.total_submissions > 0
+                                ? `${round(100 - selectedQuestion.completion_pct, 1)}%`
+                                : "0%"}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                      </Grid>
+
+                      {/* Completion Progress Bar */}
+                      <Box>
+                        <Box display="flex" justifyContent="space-between" mb={0.5}>
+                          <Typography variant="caption" fontWeight={700} sx={{ color: "#64748B" }}>
+                            Question Fill Rate
+                          </Typography>
+                          <Typography variant="caption" fontWeight={800} sx={{ color: "#0F172A" }}>
+                            {selectedQuestion.answered_ratio}
+                          </Typography>
+                        </Box>
+                        <LinearProgress
+                          variant="determinate"
+                          value={selectedQuestion.completion_pct}
+                          sx={{
+                            height: 8,
+                            borderRadius: 4,
+                            bgcolor: "#F1F5F9",
+                            "& .MuiLinearProgress-bar": {
+                              borderRadius: 4,
+                              bgcolor:
+                                selectedQuestion.completion_pct >= 80
+                                  ? "#10B981"
+                                  : selectedQuestion.completion_pct >= 50
+                                  ? "#F59E0B"
+                                  : "#EF4444",
+                            },
+                          }}
+                        />
+                      </Box>
+
+                      <Divider sx={{ my: 1 }} />
+
+                      {/* ── TAILORED VISUALIZATIONS BASED ON FIELD TYPE ───────── */}
+
+                      {/* 1. CHOICE FIELDS (Select, Radio, Checkbox, Dropdown) */}
+                      {["select", "dropdown", "radio", "checkbox"].includes(selectedQuestion.field_type) && (
+                        <Box>
+                          <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A", mb: 2 }}>
+                            Choice Distribution & Selection Breakdown
+                          </Typography>
+
+                          {selectedQuestion.distribution?.length > 0 ? (
+                            <Stack spacing={2}>
+                              {selectedQuestion.distribution.map((opt, idx) => (
+                                <Box key={idx} sx={{ p: 1.8, borderRadius: 2, bgcolor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.8}>
+                                    <Typography variant="body2" fontWeight={700} sx={{ color: "#0F172A" }}>
+                                      {opt.label}
+                                    </Typography>
+                                    <Typography variant="caption" fontWeight={800} sx={{ color: "#4F46E5" }}>
+                                      {opt.count} answers ({opt.percentage}%)
+                                    </Typography>
+                                  </Box>
+                                  <LinearProgress
+                                    variant="determinate"
+                                    value={opt.percentage}
+                                    sx={{
+                                      height: 6,
+                                      borderRadius: 3,
+                                      bgcolor: "#E2E8F0",
+                                      "& .MuiLinearProgress-bar": {
+                                        borderRadius: 3,
+                                        bgcolor: "#4F46E5",
+                                      },
+                                    }}
+                                  />
+                                </Box>
+                              ))}
+                            </Stack>
+                          ) : (
+                            <Box py={4} textAlign="center">
+                              <Typography variant="caption" color="text.secondary">
+                                No option distributions recorded yet.
+                              </Typography>
+                            </Box>
+                          )}
+                        </Box>
+                      )}
+
+                      {/* 2. RATING FIELDS (Rating, Scale, Star) */}
+                      {["rating", "star_rating", "scale"].includes(selectedQuestion.field_type) && (
+                        <Box>
+                          <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A", mb: 2 }}>
+                            Rating Score Breakdown
+                          </Typography>
+
+                          <Grid container spacing={3} alignItems="center">
+                            <Grid item xs={12} sm={4}>
+                              <Paper
+                                elevation={0}
+                                sx={{
+                                  p: 3,
+                                  textAlign: "center",
+                                  borderRadius: 3,
+                                  bgcolor: "#FFFBEB",
+                                  border: "1px solid #FEF3C7",
+                                }}
+                              >
+                                <Typography variant="h3" fontWeight={900} sx={{ color: "#B45309" }}>
+                                  {selectedQuestion.rating_stats?.average || "—"}
+                                </Typography>
+                                <Box display="flex" justifyContent="center" gap={0.5} my={1}>
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <StarRoundedIcon
+                                      key={star}
+                                      sx={{
+                                        fontSize: 22,
+                                        color:
+                                          star <= Math.round(selectedQuestion.rating_stats?.average || 0)
+                                            ? "#F59E0B"
+                                            : "#D1D5DB",
+                                      }}
+                                    />
+                                  ))}
+                                </Box>
+                                <Typography variant="caption" fontWeight={700} sx={{ color: "#92400E" }}>
+                                  Average Score out of 5
+                                </Typography>
+                              </Paper>
+                            </Grid>
+
+                            <Grid item xs={12} sm={8}>
+                              <Stack spacing={1.2}>
+                                {selectedQuestion.rating_stats?.breakdown?.map((b) => (
+                                  <Box key={b.score} display="flex" alignItems="center" gap={1.5}>
+                                    <Typography variant="caption" fontWeight={700} sx={{ width: 55, color: "#64748B" }}>
+                                      {b.score}
+                                    </Typography>
+                                    <Box flex={1}>
+                                      <LinearProgress
+                                        variant="determinate"
+                                        value={b.percentage}
+                                        sx={{
+                                          height: 8,
+                                          borderRadius: 4,
+                                          bgcolor: "#F1F5F9",
+                                          "& .MuiLinearProgress-bar": { borderRadius: 4, bgcolor: "#F59E0B" },
+                                        }}
+                                      />
+                                    </Box>
+                                    <Typography variant="caption" fontWeight={800} sx={{ width: 45, textAlign: "right", color: "#0F172A" }}>
+                                      {b.count}
+                                    </Typography>
+                                  </Box>
+                                ))}
+                              </Stack>
+                            </Grid>
+                          </Grid>
+                        </Box>
+                      )}
+
+                      {/* 3. NUMBER / CURRENCY FIELDS */}
+                      {["number", "currency"].includes(selectedQuestion.field_type) && (
+                        <Box>
+                          <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A", mb: 2 }}>
+                            Numeric Statistical Summary
+                          </Typography>
+
+                          {selectedQuestion.number_stats ? (
+                            <Grid container spacing={2}>
+                              <Grid item xs={12} sm={4}>
+                                <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2.5, bgcolor: "#F8FAFC", border: "1px solid #E2E8F0" }}>
+                                  <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                                    AVERAGE VALUE
+                                  </Typography>
+                                  <Typography variant="h5" fontWeight={800} sx={{ color: "#4F46E5", mt: 0.5 }}>
+                                    {selectedQuestion.number_stats.average}
+                                  </Typography>
+                                </Paper>
+                              </Grid>
+                              <Grid item xs={12} sm={4}>
+                                <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2.5, bgcolor: "#F8FAFC", border: "1px solid #E2E8F0" }}>
+                                  <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                                    MINIMUM
+                                  </Typography>
+                                  <Typography variant="h5" fontWeight={800} sx={{ color: "#0F172A", mt: 0.5 }}>
+                                    {selectedQuestion.number_stats.min}
+                                  </Typography>
+                                </Paper>
+                              </Grid>
+                              <Grid item xs={12} sm={4}>
+                                <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2.5, bgcolor: "#F8FAFC", border: "1px solid #E2E8F0" }}>
+                                  <Typography variant="caption" color="text.secondary" fontWeight={700}>
+                                    MAXIMUM
+                                  </Typography>
+                                  <Typography variant="h5" fontWeight={800} sx={{ color: "#0F172A", mt: 0.5 }}>
+                                    {selectedQuestion.number_stats.max}
+                                  </Typography>
+                                </Paper>
+                              </Grid>
+                            </Grid>
+                          ) : (
+                            <Box py={3} textAlign="center">
+                              <Typography variant="caption" color="text.secondary">
+                                No numeric responses available yet.
+                              </Typography>
+                            </Box>
+                          )}
+                        </Box>
+                      )}
+
+                      {/* 4. TEXT / CONTACT / LOOKUP / DATE / FILE UPLOAD FIELDS */}
+                      {!["select", "dropdown", "radio", "checkbox", "rating", "star_rating", "scale", "number", "currency"].includes(
+                        selectedQuestion.field_type
+                      ) && (
+                        <Box>
+                          <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A", mb: 1.5 }}>
+                            Sample Responses ({selectedQuestion.sample_responses?.length || 0})
+                          </Typography>
+
+                          {selectedQuestion.sample_responses?.length > 0 ? (
+                            <Stack spacing={1.2}>
+                              {selectedQuestion.sample_responses.map((resp, idx) => (
+                                <Paper
+                                  key={idx}
+                                  elevation={0}
+                                  sx={{
+                                    p: 1.8,
+                                    borderRadius: 2,
+                                    bgcolor: "#F8FAFC",
+                                    border: "1px solid #E2E8F0",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 1.5,
+                                  }}
+                                >
+                                  <Chip
+                                    label={`#${idx + 1}`}
+                                    size="small"
+                                    sx={{ height: 20, fontSize: "0.65rem", fontWeight: 700, bgcolor: "#EEF2FF", color: "#4F46E5" }}
+                                  />
+                                  <Typography variant="body2" sx={{ color: "#0F172A", fontWeight: 600, wordBreak: "break-word" }}>
+                                    {resp}
+                                  </Typography>
+                                </Paper>
+                              ))}
+                            </Stack>
+                          ) : (
+                            <Box py={4} textAlign="center" sx={{ bgcolor: "#FAFAFA", borderRadius: 2.5, border: "1px dashed #E2E8F0" }}>
+                              <Typography variant="caption" color="text.secondary">
+                                No response text recorded yet for this question.
+                              </Typography>
+                            </Box>
+                          )}
+                        </Box>
+                      )}
+                    </>
+                  ) : (
+                    <Box py={8} textAlign="center">
+                      <Typography variant="body2" color="text.secondary">
+                        Select a question from the left navigation rail to view its analytics.
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Box>
             )}
           </Paper>
         </>
       )}
     </Box>
   );
+}
+
+function round(val, dec = 1) {
+  return Number(Math.round(val + "e" + dec) + "e-" + dec);
 }

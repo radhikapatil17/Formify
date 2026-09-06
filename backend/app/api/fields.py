@@ -35,6 +35,8 @@ def create_field(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, field.form_version_id, required_role="editor")
     return create_new_field(field, db)
 
 
@@ -44,8 +46,11 @@ def create_field(
 )
 def read_fields(
     form_version_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, form_version_id, required_role="viewer")
     return get_fields(
         form_version_id,
         db
@@ -58,8 +63,11 @@ def read_fields(
 )
 def read_field(
     field_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_field_access
+    verify_field_access(db, current_user.id, field_id, required_role="viewer")
     return get_single_field(
         field_id,
         db
@@ -76,6 +84,8 @@ def update_field(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_field_access
+    verify_field_access(db, current_user.id, field_id, required_role="editor")
     return edit_field(
         field_id,
         field,
@@ -91,6 +101,8 @@ def delete_field(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_field_access
+    verify_field_access(db, current_user.id, field_id, required_role="editor")
     return remove_field(
         field_id,
         db

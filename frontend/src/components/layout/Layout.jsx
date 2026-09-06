@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
+import AIAssistantWidget from "../common/AIAssistantWidget";
 
 const EXPANDED_SIDEBAR_WIDTH = 250;
 const COLLAPSED_SIDEBAR_WIDTH = 76;
@@ -90,7 +91,7 @@ export default function Layout({ children }) {
           display: "flex",
           flexDirection: "column",
           transition: "margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
-          width: "100%",
+          width: { xs: "100%", md: `calc(100% - ${sidebarWidth}px)` },
         }}
       >
         {/* Top Navbar */}
@@ -101,18 +102,19 @@ export default function Layout({ children }) {
           component="main"
           sx={{
             flexGrow: 1,
-            px: { xs: 2.5, sm: 4, md: 5 },
-            py: { xs: 3, md: 4 },
+            px: { xs: 2.5, sm: 3.5, md: 4.5 },
+            py: { xs: 2.5, md: 3.5 },
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
+            alignItems: "stretch",
             width: "100%",
           }}
         >
           <Box
             sx={{
               width: "100%",
-              maxWidth: 1440,
+              maxWidth: 1600,
+              mx: "auto",
               flexGrow: 1,
               display: "flex",
               flexDirection: "column",
@@ -131,6 +133,7 @@ export default function Layout({ children }) {
           </Box>
         </Box>
       </Box>
+      <AIAssistantWidget />
     </Box>
   );
 }

@@ -32,6 +32,24 @@ class Form(Base):
 
     max_response_limit = Column(Integer, nullable=True)
 
+    # Password Protection fields
+    is_password_protected = Column(Boolean, default=False, server_default="false", nullable=False)
+
+    password_hash = Column(String, nullable=True)
+
+    # Micro-Verification Settings fields
+    is_email_otp_enabled = Column(Boolean, default=False, server_default="false", nullable=False)
+
+    is_phone_otp_enabled = Column(Boolean, default=False, server_default="false", nullable=False)
+
+    otp_expiry_minutes = Column(Integer, default=10, server_default="10", nullable=False)
+
+    max_otp_attempts = Column(Integer, default=3, server_default="3", nullable=False)
+
+    otp_cooldown_seconds = Column(Integer, default=60, server_default="60", nullable=False)
+
+    require_verification_to_submit = Column(Boolean, default=False, server_default="false", nullable=False)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

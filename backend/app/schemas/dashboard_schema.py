@@ -4,6 +4,12 @@ from typing import List, Optional
 class ChartDataItem(BaseModel):
     name: str
     value: int
+    submissions: Optional[int] = None
+    form_title: Optional[str] = None
+
+class TrendDataItem(BaseModel):
+    date: str
+    responses: int
 
 class RecentSubmissionItem(BaseModel):
     id: str
@@ -31,5 +37,6 @@ class DashboardSummary(BaseModel):
     active_users: int
     total_response_values: int
     chart_data: List[ChartDataItem] = []
+    response_trend: List[TrendDataItem] = []
     recent_submissions: List[RecentSubmissionItem] = []
     recent_activity: List[RecentActivityItem] = []

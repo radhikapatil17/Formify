@@ -41,10 +41,10 @@ export default function FeaturePanel() {
             src="/formify-logo.jpg"
             alt="Formify Logo"
             sx={{
-              height: 38,
+              height: 42,
               width: "auto",
+              objectFit: "contain",
               borderRadius: 1,
-              boxShadow: "0 4px 14px rgba(0, 0, 0, 0.4)",
             }}
           />
           <Typography 

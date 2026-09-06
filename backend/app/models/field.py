@@ -43,3 +43,12 @@ class Field(Base):
     allowed_file_types = Column(String)   # CSV: ".pdf,.docx,.png"
     max_file_size_mb = Column(Integer)    # MB limit per file
     max_files = Column(Integer, default=1)
+
+    # ── Formula / Math settings ──────────────────────────────────────────
+    formula_expression = Column(Text, nullable=True)
+    decimal_places = Column(Integer, default=2)
+    number_prefix = Column(String, nullable=True)
+    number_suffix = Column(String, nullable=True)
+
+    # ── Dynamic API Lookup settings ──────────────────────────────────────
+    lookup_config = Column(Text, nullable=True)

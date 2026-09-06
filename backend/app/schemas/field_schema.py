@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional
+from typing import Optional, Union, Any
 
 
 class FieldBase(BaseModel):
@@ -37,6 +37,15 @@ class FieldBase(BaseModel):
     allowed_file_types: Optional[str] = None
     max_file_size_mb: Optional[int] = None
     max_files: int = 1
+
+    # Formula / Math
+    formula_expression: Optional[str] = None
+    decimal_places: Optional[int] = 2
+    number_prefix: Optional[str] = None
+    number_suffix: Optional[str] = None
+
+    # Dynamic API Lookup
+    lookup_config: Optional[Union[str, dict, Any]] = None
 
 
 class FieldCreate(FieldBase):

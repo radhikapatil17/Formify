@@ -81,7 +81,8 @@ def read_form(
 ):
     return get_single_form(
         form_id,
-        db
+        db,
+        current_user.id
     )
 
 

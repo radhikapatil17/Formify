@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Dialog,
@@ -17,6 +17,7 @@ import {
   FormControlLabel,
   MenuItem,
   Stack,
+  Tooltip,
 } from "@mui/material";
 import toast from "react-hot-toast";
 
@@ -27,6 +28,8 @@ import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
 import BuildRoundedIcon from "@mui/icons-material/BuildRounded";
+import MicRoundedIcon from "@mui/icons-material/MicRounded";
+import MicOffRoundedIcon from "@mui/icons-material/MicOffRounded";
 
 import api from "../../api/api";
 
@@ -65,6 +68,81 @@ export default function AiGeneratorDialog({ open, onClose, onTemplateSaved }) {
   const [editDesc, setEditDesc] = useState("");
   const [questions, setQuestions] = useState([]);
 
+  // Voice Recognition States
+  const [isListening, setIsListening] = useState(false);
+  const [recognition, setRecognition] = useState(null);
+
+  // Initialize SpeechRecognition on mount
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.lang = "en-US";
+
+      rec.onstart = () => {
+        setIsListening(true);
+      };
+
+      rec.onend = () => {
+        setIsListening(false);
+      };
+
+      rec.onerror = (event) => {
+        console.error("Speech recognition error", event);
+        setIsListening(false);
+        if (event.error === "not-allowed") {
+          toast.error("Microphone permission denied. Please allow access in browser settings.");
+        } else if (event.error === "no-speech") {
+          toast.error("No speech detected. Please try again.");
+        }
+      };
+
+      rec.onresult = (event) => {
+        let finalTranscript = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          setPrompt((prev) => {
+            const trimmedPrev = prev.trim();
+            return trimmedPrev ? `${trimmedPrev} ${finalTranscript}` : finalTranscript;
+          });
+        }
+      };
+
+      setRecognition(rec);
+    }
+  }, []);
+
+  // Stop listening when dialog is closed
+  useEffect(() => {
+    if (!open && isListening && recognition) {
+      recognition.stop();
+      setIsListening(false);
+    }
+  }, [open, isListening, recognition]);
+
+  const toggleListening = () => {
+    if (!recognition) {
+      toast.error("Voice recognition is not supported in this browser. Please use Chrome, Safari, or Edge.");
+      return;
+    }
+
+    if (isListening) {
+      recognition.stop();
+    } else {
+      try {
+        recognition.start();
+      } catch (err) {
+        console.error("Failed to start speech recognition:", err);
+      }
+    }
+  };
+
   const handleGenerate = async (promptOverride) => {
     const textToUse = promptOverride || prompt;
     if (!textToUse.trim()) {
@@ -90,6 +168,51 @@ export default function AiGeneratorDialog({ open, onClose, onTemplateSaved }) {
     } catch (err) {
       console.error(err);
       toast.error("AI Generation failed. Please try again.");
+      setStep(1);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuickBuildAndOpen = async (promptOverride) => {
+    const textToUse = promptOverride || prompt;
+    if (!textToUse.trim()) {
+      toast.error("Please enter a form description prompt");
+      return;
+    }
+
+    try {
+      setStep(2);
+      setLoading(true);
+
+      const res = await api.post("/ai/generate-template", {
+        prompt: textToUse.trim(),
+      });
+
+      const schema = res.data;
+      const title = schema.title || "AI Generated Form";
+      const desc = schema.description || "Synthesized form schema";
+      const qList = schema.questions || [];
+
+      const tmplRes = await api.post("/templates/", {
+        title: title.trim(),
+        category: schema.category || "Feedback",
+        description: desc,
+        template_schema: qList,
+        is_public: false,
+      });
+
+      const useRes = await api.post("/templates/use", {
+        template_id: tmplRes.data.id,
+      });
+
+      toast.success("AI Form built and opened in builder!");
+      onClose();
+      if (onTemplateSaved) onTemplateSaved();
+      navigate(`/create-form?id=${useRes.data.form_id}`);
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.detail || "AI Form generation failed. Please try again.");
       setStep(1);
     } finally {
       setLoading(false);
@@ -186,33 +309,85 @@ export default function AiGeneratorDialog({ open, onClose, onTemplateSaved }) {
         {step === 1 && (
           <Box display="flex" flexDirection="column" gap={3} py={1}>
             <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B" }}>
-              Describe the form schema you want to generate. Gemini AI will automatically create sections, question labels, input types, required toggles, choice options, and validation rules.
+              Describe the form schema you want to generate. Formify AI will automatically create sections, question labels, input types, required toggles, choice options, and validation rules.
             </Typography>
 
             <Box>
               <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: "uppercase", display: "block", mb: 0.8, color: "#64748B" }}>
-                Quick Prompt Suggestions:
+                Quick Prompt Suggestions (Click to autofill):
               </Typography>
               <Box display="flex" flexWrap="wrap" gap={1}>
                 {EXAMPLE_PROMPTS.map((p) => (
                   <Chip
                     key={p}
                     label={p}
-                    onClick={() => {
-                      setPrompt(p);
-                      handleGenerate(p);
-                    }}
+                    onClick={() => setPrompt(p)}
                     clickable
-                    sx={{ bgcolor: "#F5F3FF", color: "#6D28D9", fontWeight: 700, fontSize: "0.75rem", "&:hover": { bgcolor: "#EDE9FE" } }}
+                    sx={{
+                      bgcolor: prompt === p ? "#EDE9FE" : "#F8FAFC",
+                      color: prompt === p ? "#6D28D9" : "#475569",
+                      border: prompt === p ? "1px solid #C4B5FD" : "1px solid #E2E8F0",
+                      fontWeight: 700,
+                      fontSize: "0.75rem",
+                      "&:hover": { bgcolor: "#F5F3FF", color: "#6D28D9" },
+                    }}
                   />
                 ))}
               </Box>
             </Box>
 
             <Box>
-              <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: "uppercase", display: "block", mb: 0.8, color: "#64748B" }}>
-                Your Custom AI Prompt:
-              </Typography>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.8}>
+                <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: "uppercase", color: "#64748B" }}>
+                  Your Custom AI Prompt:
+                </Typography>
+                
+                {/* Voice Input Button & Status Indicator */}
+                <Box display="flex" alignItems="center" gap={1}>
+                  {isListening && (
+                    <Typography variant="caption" sx={{ color: "#EF4444", fontWeight: 700, display: "flex", alignItems: "center", gap: 0.5 }}>
+                      <span className="listening-dot" style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#EF4444", display: "inline-block" }}></span>
+                      Listening... Speak now
+                    </Typography>
+                  )}
+                  <Tooltip title={!recognition ? "Voice recognition not supported in this browser" : isListening ? "Stop Voice Input" : "Start Voice Input"}>
+                    <span>
+                      <IconButton
+                        size="small"
+                        disabled={!recognition}
+                        onClick={toggleListening}
+                        sx={{
+                          border: "1px solid",
+                          borderColor: isListening ? "#EF4444" : "#E2E8F0",
+                          bgcolor: isListening ? "#EF4444" : "#F8FAFC",
+                          color: isListening ? "#FFFFFF" : "#64748B",
+                          p: 0.75,
+                          transition: "all 0.2s ease",
+                          animation: isListening ? "pulse-mic 1.5s infinite" : "none",
+                          "&:hover": {
+                            bgcolor: isListening ? "#DC2626" : "#EEF2FF",
+                            borderColor: isListening ? "#DC2626" : "#A5B4FC",
+                            color: isListening ? "#FFFFFF" : "#4F46E5",
+                          },
+                          "@keyframes pulse-mic": {
+                            "0%": {
+                              boxShadow: "0 0 0 0 rgba(239, 68, 68, 0.4)",
+                            },
+                            "70%": {
+                              boxShadow: "0 0 0 8px rgba(239, 68, 68, 0)",
+                            },
+                            "100%": {
+                              boxShadow: "0 0 0 0 rgba(239, 68, 68, 0)",
+                            },
+                          }
+                        }}
+                      >
+                        {isListening ? <MicOffRoundedIcon sx={{ fontSize: 16 }} /> : <MicRoundedIcon sx={{ fontSize: 16 }} />}
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Box>
+              </Box>
               <TextField
                 fullWidth
                 multiline
@@ -222,6 +397,7 @@ export default function AiGeneratorDialog({ open, onClose, onTemplateSaved }) {
                 placeholder="e.g. Create a College Admission Form with high school transcript upload, major selection dropdown, personal statement essay, and date of birth fields..."
               />
             </Box>
+
           </Box>
         )}
 
@@ -230,7 +406,7 @@ export default function AiGeneratorDialog({ open, onClose, onTemplateSaved }) {
           <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" py={8} gap={2}>
             <CircularProgress size={40} sx={{ color: "#8B5CF6" }} />
             <Typography variant="body1" fontWeight={800} sx={{ color: "#0F172A" }}>
-              Gemini AI is synthesizing your form schema...
+              Formify AI is synthesizing your form schema...
             </Typography>
             <Typography variant="caption" color="text.secondary">
               Generating fields, input validation rules, and choice options
@@ -317,15 +493,36 @@ export default function AiGeneratorDialog({ open, onClose, onTemplateSaved }) {
       <DialogActions sx={{ p: 2.5, justifyContent: "space-between" }}>
         {step === 1 && (
           <>
-            <Button variant="outlined" onClick={onClose}>Cancel</Button>
-            <Button
-              variant="contained"
-              onClick={() => handleGenerate()}
-              startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 16 }} />}
-              sx={{ bgcolor: "#8B5CF6", fontWeight: 700, "&:hover": { bgcolor: "#7C3AED" } }}
-            >
-              Generate Form Schema
-            </Button>
+            <Button variant="outlined" onClick={onClose} sx={{ fontWeight: 600 }}>Cancel</Button>
+            <Box display="flex" gap={1.5}>
+              <Button
+                variant="outlined"
+                onClick={() => handleGenerate()}
+                disabled={loading || !prompt.trim()}
+                startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 16, color: "#8B5CF6" }} />}
+                sx={{
+                  fontWeight: 700,
+                  borderColor: "#DDD6FE",
+                  color: "#6D28D9",
+                  "&:hover": { bgcolor: "#F5F3FF", borderColor: "#C4B5FD" },
+                }}
+              >
+                Preview &amp; Customize
+              </Button>
+              <Button
+                variant="contained"
+                onClick={() => handleQuickBuildAndOpen()}
+                disabled={loading || !prompt.trim()}
+                startIcon={<BuildRoundedIcon sx={{ fontSize: 16 }} />}
+                sx={{
+                  bgcolor: "#4F46E5",
+                  fontWeight: 700,
+                  "&:hover": { bgcolor: "#4338CA" },
+                }}
+              >
+                Quick Build &amp; Open
+              </Button>
+            </Box>
           </>
         )}
 

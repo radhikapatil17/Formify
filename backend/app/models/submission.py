@@ -16,6 +16,8 @@ class Submission(Base):
 
     respondent_identifier = Column(String)
 
+    client_id = Column(String, nullable=True, index=True)
+
     status = Column(String, default="submitted")
 
     started_at = Column(

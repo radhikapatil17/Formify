@@ -45,17 +45,28 @@ class PublicField(BaseModel):
     max_file_size_mb: int | None = None
     max_files: int = 1
 
+    # Formula / Calculation
+    formula_expression: str | None = None
+    decimal_places: int | None = 2
+    number_prefix: str | None = None
+    number_suffix: str | None = None
+
+    # Dynamic API Lookup
+    lookup_config: str | None = None
+
     options: list[PublicOption] = []
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class PublicConditionalRule(BaseModel):
-    trigger_field_id: int
-    operator: str
-    comparison_value: str
-    target_field_id: int
-    action: str
+    trigger_field_id: int | None = None
+    operator: str | None = None
+    comparison_value: str | None = None
+    target_field_id: int | None = None
+    action: str | None = None
+    logic_operator: str | None = "AND"
+    conditions_json: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,3 +80,14 @@ class PublicFormResponse(BaseModel):
     conditional_rules: list[PublicConditionalRule]
     schedule_status: dict | None = None
     response_limit_status: dict | None = None
+    is_password_protected: bool = False  # True means form is locked; fields will be empty until unlocked
+    is_email_otp_enabled: bool = False
+    is_phone_otp_enabled: bool = False
+    otp_expiry_minutes: int = 10
+    max_otp_attempts: int = 3
+    otp_cooldown_seconds: int = 60
+    require_verification_to_submit: bool = False
+
+
+class PasswordVerifyRequest(BaseModel):
+    password: str

@@ -6,13 +6,13 @@ import {
   Button,
   Paper,
   TextField,
-  InputAdornment,
   FormControlLabel,
   Switch,
   MenuItem,
   IconButton,
   CircularProgress,
   Divider,
+  Alert,
   Select,
   Radio,
   RadioGroup,
@@ -28,7 +28,6 @@ import {
   Slider,
   Grid,
   Menu,
-  Alert,
   AlertTitle,
 } from "@mui/material";
 import toast from "react-hot-toast";
@@ -51,14 +50,23 @@ import EmailShareModal from "../../components/forms/EmailShareModal";
 import QrCodeModal from "../../components/forms/QrCodeModal";
 import FormScheduleModal from "../../components/forms/FormScheduleModal";
 import ResponseLimitModal from "../../components/forms/ResponseLimitModal";
+import FormCollaboratorsModal from "../../components/forms/FormCollaboratorsModal";
+import FormPasswordModal from "../../components/forms/FormPasswordModal";
+import FormVerificationModal from "../../components/forms/FormVerificationModal";
+import VerifiedUserRoundedIcon from "@mui/icons-material/VerifiedUserRounded";
+import GroupAddRoundedIcon from "@mui/icons-material/GroupAddRounded";
 import AltRouteRoundedIcon from "@mui/icons-material/AltRouteRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 import FileCopyRoundedIcon from "@mui/icons-material/FileCopyRounded";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
+import FunctionsRoundedIcon from "@mui/icons-material/FunctionsRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import { evaluateAllFormulas, formatFormulaValue } from "../../utils/formulaEngine";
 
 // Canvas-specific icons
 import AttachFileOutlinedIcon from "@mui/icons-material/AttachFileOutlined";
@@ -72,6 +80,8 @@ import ToggleOnRoundedIcon from "@mui/icons-material/ToggleOnRounded";
 import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import VpnKeyRoundedIcon from "@mui/icons-material/VpnKeyRounded";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
+import SaveRoundedIcon from "@mui/icons-material/SaveRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 
 import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
@@ -83,6 +93,8 @@ import PaletteOutlinedIcon from "@mui/icons-material/PaletteOutlined";
 import QuestionToolbox from "../../components/formBuilder/QuestionToolbox";
 import QuestionProperties from "../../components/formBuilder/QuestionProperties";
 import ThemeCustomizer from "../../components/formBuilder/ThemeCustomizer";
+import AIFormDoctorDrawer from "../../components/formBuilder/AIFormDoctorDrawer";
+import AIFormSimulatorModal from "../../components/formBuilder/AIFormSimulatorModal";
 import { parseFormTheme, DEFAULT_FORM_THEME } from "../../utils/themePresets";
 import api from "../../api/api";
 
@@ -167,6 +179,7 @@ export default function CreateForm() {
 
   // Data states
   const [form, setForm] = useState(null);
+  const isViewer = form?.user_role === "viewer";
   const [version, setVersion] = useState(null);
   const [fields, setFields] = useState([]);
   const [rules, setRules] = useState([]);
@@ -216,12 +229,44 @@ export default function CreateForm() {
   const [actionsMenuAnchor, setActionsMenuAnchor] = useState(null);
   const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
   const [openResetConfirm, setOpenResetConfirm] = useState(false);
+  const [openVerificationModal, setOpenVerificationModal] = useState(false);
   const [openEmailShare, setOpenEmailShare] = useState(false);
   const [openQrCode, setOpenQrCode] = useState(false);
   const [openSchedule, setOpenSchedule] = useState(false);
   const [openResponseLimit, setOpenResponseLimit] = useState(false);
+  const [openCollaborators, setOpenCollaborators] = useState(false);
+  const [openPasswordProtect, setOpenPasswordProtect] = useState(false);
+  const [openSettingsModal, setOpenSettingsModal] = useState(false);
+  const [openDoctorDrawer, setOpenDoctorDrawer] = useState(false);
+  const [openSimulatorModal, setOpenSimulatorModal] = useState(false);
   const [deletingForm, setDeletingForm] = useState(false);
   const [duplicatingForm, setDuplicatingForm] = useState(false);
+
+  // AI Form Doctor Fix Action Handler
+  const handleApplyDoctorFix = async (fixAction) => {
+    if (!fixAction) return;
+
+    if (fixAction.type === "update_field" && fixAction.field_id && fixAction.updates) {
+      const targetFieldId = fixAction.field_id;
+      const updates = fixAction.updates;
+
+      setFields((prevFields) =>
+        prevFields.map((f) => {
+          if (Number(f.id) === Number(targetFieldId)) {
+            return { ...f, ...updates };
+          }
+          return f;
+        })
+      );
+
+      // Sync field update with backend if persistent field ID
+      try {
+        await api.put(`/fields/${targetFieldId}`, updates);
+      } catch (err) {
+        console.warn("Local fix applied, backend sync warning:", err);
+      }
+    }
+  };
 
   const handleFormMetaChange = async (key, val) => {
     if (!form) return;
@@ -371,6 +416,7 @@ export default function CreateForm() {
     file_upload: "File Upload", image_upload: "Image Upload", signature: "Signature",
     heading: "Heading", description: "Description", section_divider: "Section Divider",
     image: "Image Block", video: "Video Block", page_break: "Page Break",
+    lookup: "API Lookup", formula: "Formula / Math",
   };
 
   // Add field helper
@@ -438,6 +484,11 @@ export default function CreateForm() {
           allowed_file_types: orderedFields[i].allowed_file_types || null,
           max_file_size_mb: orderedFields[i].max_file_size_mb ?? null,
           max_files: orderedFields[i].max_files ?? 1,
+          formula_expression: orderedFields[i].formula_expression || null,
+          decimal_places: orderedFields[i].decimal_places ?? 2,
+          number_prefix: orderedFields[i].number_prefix || null,
+          number_suffix: orderedFields[i].number_suffix || null,
+          lookup_config: orderedFields[i].lookup_config || null,
         });
       } catch (err) {
         console.error(err);
@@ -584,6 +635,11 @@ export default function CreateForm() {
         allowed_file_types: updated.allowed_file_types || null,
         max_file_size_mb: updated.max_file_size_mb ?? null,
         max_files: updated.max_files ?? 1,
+        formula_expression: updated.formula_expression || null,
+        decimal_places: updated.decimal_places ?? 2,
+        number_prefix: updated.number_prefix || null,
+        number_suffix: updated.number_suffix || null,
+        lookup_config: updated.lookup_config || null,
       });
     } catch (err) {
       console.error(err);
@@ -1197,7 +1253,7 @@ export default function CreateForm() {
 
       toast.success("Form published live! Public form link is ready.", { id: "publish-success" });
       await loadFormData();
-      setActiveTab(4); // Switch to Share & Integrate tab to show public link
+      setActiveTab(3); // Switch to Share tab to show public link
     } catch (err) {
       console.error("Publish error:", err);
       toast.error(err.response?.data?.detail || "Failed to publish form. Please review form settings.", { id: "publish-err" });
@@ -1774,8 +1830,16 @@ export default function CreateForm() {
     toast.success("Public link copied to clipboard!");
   };
 
+  const handlePreviewInputChange = (fieldId, value) => {
+    setPreviewAnswers((prev) => {
+      const updated = { ...prev, [fieldId]: value };
+      return evaluateAllFormulas(fields, updated);
+    });
+  };
+
   const handleOpenPreview = () => {
-    setPreviewAnswers({});
+    const initialAnswers = evaluateAllFormulas(fields, {});
+    setPreviewAnswers(initialAnswers);
     setPreviewErrors({});
     setOpenPreview(true);
   };
@@ -1843,13 +1907,12 @@ export default function CreateForm() {
           </Typography>
         </Stack>
 
-        {/* Center: Build | Theme | Logic | Settings | Share Tabs */}
+        {/* Center: Build | Theme | Logic | Share Tabs */}
         <Stack direction="row" spacing={0.5} sx={{ bgcolor: "#F8FAFC", p: 0.5, borderRadius: 2, border: "1px solid #E2E8F0" }}>
           {[
             { label: "Build", icon: <LayersOutlinedIcon sx={{ fontSize: 15 }} /> },
             { label: "Theme", icon: <PaletteOutlinedIcon sx={{ fontSize: 15 }} /> },
             { label: "Logic", icon: <AltRouteRoundedIcon sx={{ fontSize: 15 }} /> },
-            { label: "Settings", icon: <SettingsRoundedIcon sx={{ fontSize: 15 }} /> },
             { label: "Share", icon: <OpenInNewRoundedIcon sx={{ fontSize: 15 }} /> },
           ].map((tabObj, index) => (
             <Button
@@ -1875,8 +1938,44 @@ export default function CreateForm() {
           ))}
         </Stack>
 
-        {/* Right: Preview | Save | Publish Actions */}
+        {/* Right: Test Form with AI | Check My Form | Preview | Save | Publish Actions */}
         <Stack direction="row" spacing={1} alignItems="center">
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => setOpenSimulatorModal(true)}
+            sx={{
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              textTransform: "none",
+              borderColor: "#CBD5E1",
+              color: "#334155",
+              borderRadius: 2,
+              px: 1.8,
+              py: 0.6,
+              "&:hover": { borderColor: "#0EA5E9", bgcolor: "#F0F9FF", color: "#0284C7" },
+            }}
+          >
+            Test Form with AI
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => setOpenDoctorDrawer(true)}
+            sx={{
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              textTransform: "none",
+              borderColor: "#CBD5E1",
+              color: "#334155",
+              borderRadius: 2,
+              px: 1.8,
+              py: 0.6,
+              "&:hover": { borderColor: "#6366F1", bgcolor: "#EEF2FF", color: "#4F46E5" },
+            }}
+          >
+            Check My Form
+          </Button>
           <Button
             variant="outlined"
             size="small"
@@ -1954,6 +2053,15 @@ export default function CreateForm() {
             onClose={() => setActionsMenuAnchor(null)}
             PaperProps={{ sx: { borderRadius: 2, mt: 1, minWidth: 160 } }}
           >
+            <MenuItem onClick={() => { setActionsMenuAnchor(null); setOpenSettingsModal(true); }}>
+              <SettingsRoundedIcon sx={{ fontSize: 16, mr: 1, color: "#64748B" }} />
+              Form Settings
+            </MenuItem>
+            <MenuItem onClick={() => { setActionsMenuAnchor(null); setOpenVerificationModal(true); }}>
+              <VerifiedUserRoundedIcon sx={{ fontSize: 16, mr: 1, color: "#4F46E5" }} />
+              Security &amp; Micro-Verification
+            </MenuItem>
+            <Divider />
             <MenuItem onClick={() => { setActionsMenuAnchor(null); handleDuplicateForm(); }} disabled={duplicatingForm}>
               <FileCopyRoundedIcon sx={{ fontSize: 16, mr: 1, color: "#4F46E5" }} />
               Duplicate Form
@@ -1976,8 +2084,8 @@ export default function CreateForm() {
          ───────────────────────────────────────────────────────────── */}
       {activeTab === 0 && (
         <Box sx={{ display: "flex", gap: 3, minHeight: 620 }}>
-        {/* LEFT: QUESTION TOOLBOX */}
-          <QuestionToolbox onAddField={handleAddField} fields={fields} />
+          {/* LEFT: QUESTION TOOLBOX */}
+          {!isViewer && <QuestionToolbox onAddField={handleAddField} fields={fields} />}
 
           {/* CENTER: INTERACTIVE FORM CANVAS */}
           <Paper
@@ -1985,6 +2093,7 @@ export default function CreateForm() {
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
+              if (isViewer) return;
               const fieldType = e.dataTransfer.getData("fieldType");
               if (fieldType) handleAddField(fieldType);
             }}
@@ -1998,6 +2107,11 @@ export default function CreateForm() {
               overflowY: "auto",
             }}
           >
+            {isViewer && (
+              <Alert severity="info" sx={{ mb: 3, borderRadius: 2.5, fontWeight: 700 }}>
+                You are viewing this form as a collaborator with Read-Only permissions.
+              </Alert>
+            )}
             {/* Form Title & Description Header Card */}
             <Paper
               elevation={0}
@@ -2053,7 +2167,7 @@ export default function CreateForm() {
 
             {fields.length === 0 ? (
               <Box
-                py={7}
+                py={6}
                 px={3}
                 textAlign="center"
                 sx={{
@@ -2064,28 +2178,136 @@ export default function CreateForm() {
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
+                  minHeight: 310,
+                  transition: "all 0.2s ease",
+                  "&:hover": {
+                    borderColor: "#94A3B8",
+                    bgcolor: "#FDFDFD",
+                  },
                 }}
               >
+                {/* Form Creation Illustration */}
                 <Box
                   sx={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: "50%",
-                    bgcolor: "#EEF2FF",
-                    color: "#4F46E5",
+                    width: 84,
+                    height: 84,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    mb: 2,
-                    boxShadow: "0 8px 20px -4px rgba(79, 70, 229, 0.2)",
+                    mb: 2.5,
+                    filter: "drop-shadow(0 10px 22px rgba(79, 70, 229, 0.16))",
+                    transition: "transform 0.25s ease",
+                    "&:hover": { transform: "translateY(-2px)" },
                   }}
                 >
-                  <AutoAwesomeRoundedIcon sx={{ fontSize: 32 }} />
+                  <svg
+                    width="84"
+                    height="84"
+                    viewBox="0 0 84 84"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <defs>
+                      <linearGradient id="emptyFormCardGrad" x1="16" y1="8" x2="68" y2="76" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stopColor="#FFFFFF" />
+                        <stop offset="100%" stopColor="#F8FAFC" />
+                      </linearGradient>
+                      <linearGradient id="emptyFormHeaderGrad" x1="20" y1="12" x2="64" y2="12" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stopColor="#4F46E5" />
+                        <stop offset="100%" stopColor="#7C3AED" />
+                      </linearGradient>
+                      <linearGradient id="emptyActionFabGrad" x1="56" y1="56" x2="76" y2="76" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stopColor="#6366F1" />
+                        <stop offset="100%" stopColor="#4F46E5" />
+                      </linearGradient>
+                      <filter id="emptyFabShadow" x="48" y="50" width="34" height="34" filterUnits="userSpaceOnUse">
+                        <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#4F46E5" floodOpacity="0.32" />
+                      </filter>
+                    </defs>
+
+                    {/* Angled background document layer for subtle depth */}
+                    <rect
+                      x="20"
+                      y="10"
+                      width="48"
+                      height="62"
+                      rx="10"
+                      fill="#EEF2FF"
+                      stroke="#E0E7FF"
+                      strokeWidth="1.2"
+                      transform="rotate(4 44 41)"
+                    />
+
+                    {/* Primary Foreground Form Document Sheet */}
+                    <rect
+                      x="16"
+                      y="10"
+                      width="50"
+                      height="62"
+                      rx="10"
+                      fill="url(#emptyFormCardGrad)"
+                      stroke="#CBD5E1"
+                      strokeWidth="1.4"
+                    />
+
+                    {/* Form Header / Banner Indicator */}
+                    <rect
+                      x="21"
+                      y="16"
+                      width="40"
+                      height="6"
+                      rx="3"
+                      fill="url(#emptyFormHeaderGrad)"
+                    />
+
+                    {/* Field 1: Radio Question & Line */}
+                    <circle cx="25" cy="30" r="3" fill="#6366F1" />
+                    <circle cx="25" cy="30" r="1.2" fill="#FFFFFF" />
+                    <rect x="31" y="28" width="28" height="4.5" rx="2.25" fill="#E2E8F0" />
+
+                    {/* Field 1 Input preview container */}
+                    <rect
+                      x="23"
+                      y="36"
+                      width="36"
+                      height="6.5"
+                      rx="3"
+                      fill="#F1F5F9"
+                      stroke="#E2E8F0"
+                      strokeWidth="1"
+                    />
+
+                    {/* Field 2: Checkbox Question & Line */}
+                    <rect x="23.5" y="47.5" width="6" height="6" rx="1.8" fill="#10B981" />
+                    <path
+                      d="M25 50.5L26.5 52L28.5 49"
+                      stroke="#FFFFFF"
+                      strokeWidth="1.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <rect x="32.5" y="48.5" width="22" height="4.5" rx="2.25" fill="#E2E8F0" />
+
+                    {/* Field 3: Text Input Placeholder Line */}
+                    <rect x="23.5" y="58" width="26" height="4.5" rx="2.25" fill="#F1F5F9" stroke="#E2E8F0" strokeWidth="0.8" />
+
+                    {/* Interactive "+ Add Field" floating action badge */}
+                    <g filter="url(#emptyFabShadow)">
+                      <circle cx="65" cy="64" r="11" fill="url(#emptyActionFabGrad)" stroke="#FFFFFF" strokeWidth="2" />
+                      <path
+                        d="M65 59.5V68.5M60.5 64H69.5"
+                        stroke="#FFFFFF"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </g>
+                  </svg>
                 </Box>
-                <Typography variant="h6" fontWeight={800} sx={{ color: "#0F172A", letterSpacing: "-0.02em" }}>
+
+                <Typography variant="h6" fontWeight={800} sx={{ color: "#0F172A", letterSpacing: "-0.015em", fontSize: "1.1rem", mb: 0.8 }}>
                   Start building your form by adding a question.
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", mt: 0.8, mb: 3, maxWidth: 460 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", mb: 3, maxWidth: 480, lineHeight: 1.55, fontSize: "0.85rem" }}>
                   Click or drag any of the 25 question types from the left Question Toolbox onto this canvas, or pick a popular starter question below:
                 </Typography>
 
@@ -2110,7 +2332,16 @@ export default function CreateForm() {
                         borderColor: "#CBD5E1",
                         color: "#334155",
                         bgcolor: "#FFFFFF",
-                        "&:hover": { bgcolor: "#EEF2FF", borderColor: "#4F46E5", color: "#4F46E5" },
+                        px: 1.6,
+                        py: 0.6,
+                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.03)",
+                        "&:hover": {
+                          bgcolor: "#EEF2FF",
+                          borderColor: "#4F46E5",
+                          color: "#4F46E5",
+                          transform: "translateY(-1px)",
+                        },
+                        transition: "all 0.15s ease",
                       }}
                     >
                       {btn.label}
@@ -2161,44 +2392,39 @@ export default function CreateForm() {
                             size="small"
                             sx={{ fontWeight: 600, fontSize: "0.675rem", height: 20, bgcolor: "#F1F5F9", color: "#475569" }}
                           />
-                          {f.is_required && (
-                            <Chip
-                              label="Required *"
-                              size="small"
-                              sx={{ fontWeight: 700, fontSize: "0.65rem", height: 20, bgcolor: "#FEF2F2", color: "#DC2626" }}
-                            />
-                          )}
                         </Box>
 
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                size="small"
-                                checked={f.is_required || false}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  handleFieldChange("is_required", e.target.checked);
-                                }}
-                              />
-                            }
-                            label={<Typography variant="caption" fontWeight={700} sx={{ color: f.is_required ? "#DC2626" : "#64748B", fontSize: "0.72rem" }}>Required</Typography>}
-                            onClick={(e) => e.stopPropagation()}
-                            sx={{ m: 0, mr: 1 }}
-                          />
-                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleReorderField(f.id, "up"); }} disabled={index === 0} title="Move Up">
-                            <ArrowUpwardRoundedIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleReorderField(f.id, "down"); }} disabled={index === fields.length - 1} title="Move Down">
-                            <ArrowDownwardRoundedIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDuplicateField(f); }} title="Duplicate Question">
-                            <FileCopyRoundedIcon sx={{ fontSize: 16, color: "#64748B" }} />
-                          </IconButton>
-                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteField(f.id); }} title="Delete Question">
-                            <DeleteOutlineRoundedIcon sx={{ fontSize: 16, color: "#EF4444" }} />
-                          </IconButton>
-                        </Stack>
+                        {!isViewer && (
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  size="small"
+                                  checked={f.is_required || false}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleFieldChange("is_required", e.target.checked);
+                                  }}
+                                />
+                              }
+                              label={<Typography variant="caption" fontWeight={700} sx={{ color: f.is_required ? "#DC2626" : "#64748B", fontSize: "0.72rem" }}>Required</Typography>}
+                              onClick={(e) => e.stopPropagation()}
+                              sx={{ m: 0, mr: 1 }}
+                            />
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleReorderField(f.id, "up"); }} disabled={index === 0} title="Move Up">
+                              <ArrowUpwardRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleReorderField(f.id, "down"); }} disabled={index === fields.length - 1} title="Move Down">
+                              <ArrowDownwardRoundedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDuplicateField(f); }} title="Duplicate Question">
+                              <FileCopyRoundedIcon sx={{ fontSize: 16, color: "#64748B" }} />
+                            </IconButton>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteField(f.id); }} title="Delete Question">
+                              <DeleteOutlineRoundedIcon sx={{ fontSize: 16, color: "#EF4444" }} />
+                            </IconButton>
+                          </Stack>
+                        )}
                       </Box>
 
                       {/* Question Label */}
@@ -2218,6 +2444,83 @@ export default function CreateForm() {
                         {f.field_type === "number" && (
                           <TextField fullWidth type="number" size="small" placeholder={f.placeholder || "0"} disabled />
                         )}
+                        {f.field_type === "formula" && (
+                          <Box
+                            sx={{
+                              p: 1.5,
+                              borderRadius: 2,
+                              bgcolor: "#F8FAFC",
+                              border: "1.5px dashed #CBD5E1",
+                              display: "flex",
+                              alignItems: "center",
+                              justify: "space-between",
+                              gap: 1.5,
+                            }}
+                          >
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <FunctionsRoundedIcon sx={{ fontSize: 20, color: "#6366F1" }} />
+                              <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                                {f.formula_expression ? `Formula: ${f.formula_expression}` : "Click properties to build formula"}
+                              </Typography>
+                            </Box>
+                            <Chip label="Read-Only Calculated" size="small" variant="outlined" sx={{ fontSize: "0.7rem", fontWeight: 600, color: "#6366F1" }} />
+                          </Box>
+                        )}
+                        {f.field_type === "lookup" && (() => {
+                          let cfg = null;
+                          try {
+                            cfg = typeof f.lookup_config === "string" ? JSON.parse(f.lookup_config) : f.lookup_config;
+                          } catch {
+                            cfg = null;
+                          }
+                          const mappingsCount = cfg?.response_mappings?.length || 0;
+                          return (
+                            <Box
+                              sx={{
+                                p: 1.5,
+                                bgcolor: "#F5F3FF",
+                                borderRadius: 2,
+                                border: "1.5px dashed #C4B5FD",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 1,
+                              }}
+                            >
+                              <Box display="flex" alignItems="center" justifyContent="space-between">
+                                <Box display="flex" alignItems="center" gap={1}>
+                                  <SearchRoundedIcon sx={{ fontSize: 20, color: "#7C3AED" }} />
+                                  <Typography variant="body2" fontWeight={700} sx={{ color: "#5B21B6" }}>
+                                    {cfg?.endpoint ? `API: ${cfg.endpoint}` : "API Lookup (Click properties to configure)"}
+                                  </Typography>
+                                </Box>
+                                <Chip
+                                  label={cfg?.endpoint ? "Connected" : "Setup Required"}
+                                  size="small"
+                                  color={cfg?.endpoint ? "success" : "default"}
+                                  sx={{ fontSize: "0.68rem", fontWeight: 700, height: 20 }}
+                                />
+                              </Box>
+                              {mappingsCount > 0 && (
+                                <Typography variant="caption" sx={{ color: "#6D28D9", fontSize: "0.72rem" }}>
+                                  Populates {mappingsCount} field{mappingsCount > 1 ? "s" : ""} on {cfg?.trigger_behavior === "on_button" ? "button click" : "valid input"}
+                                </Typography>
+                              )}
+                              <TextField
+                                fullWidth
+                                size="small"
+                                placeholder={f.placeholder || "Enter value to lookup..."}
+                                disabled
+                                InputProps={{
+                                  endAdornment: (
+                                    <InputAdornment position="end">
+                                      <Chip label={cfg?.button_label || "Lookup"} size="small" sx={{ bgcolor: "#EDE9FE", color: "#6D28D9", fontWeight: 700, fontSize: "0.7rem", height: 22 }} />
+                                    </InputAdornment>
+                                  ),
+                                }}
+                              />
+                            </Box>
+                          );
+                        })()}
                         {f.field_type === "date" && (
                           <TextField fullWidth type="date" size="small" disabled />
                         )}
@@ -2396,24 +2699,40 @@ export default function CreateForm() {
 
           {/* RIGHT: QUESTION PROPERTIES PANEL */}
           {selectedField && (
-            <QuestionProperties
-              field={selectedField}
-              onClose={() => setSelectedFieldId(null)}
-              onFieldChange={handleFieldChange}
-              onAddOption={handleAddOption}
-              onDeleteOption={handleDeleteOption}
-              onEditOption={handleEditOption}
-              onMoveOption={handleMoveOption}
-              onDragOption={handleDragOption}
-              onDelete={() => handleDeleteField(selectedField.id)}
-              onDuplicate={() => handleDuplicateField(selectedField)}
-              onMoveUp={() => handleReorderField(selectedField.id, "up")}
-              onMoveDown={() => handleReorderField(selectedField.id, "down")}
-              newOptionText={newOptionText}
-              setNewOptionText={setNewOptionText}
-              isFirst={fields.findIndex((f) => f.id === selectedField.id) === 0}
-              isLast={fields.findIndex((f) => f.id === selectedField.id) === fields.length - 1}
-            />
+            <Box sx={{ position: "relative" }}>
+              <QuestionProperties
+                field={selectedField}
+                onClose={() => setSelectedFieldId(null)}
+                onFieldChange={isViewer ? () => {} : handleFieldChange}
+                onAddOption={isViewer ? () => {} : handleAddOption}
+                onDeleteOption={isViewer ? () => {} : handleDeleteOption}
+                onEditOption={isViewer ? () => {} : handleEditOption}
+                onMoveOption={isViewer ? () => {} : handleMoveOption}
+                onDragOption={isViewer ? () => {} : handleDragOption}
+                onDelete={isViewer ? undefined : () => handleDeleteField(selectedField.id)}
+                onDuplicate={isViewer ? undefined : () => handleDuplicateField(selectedField)}
+                onMoveUp={isViewer ? undefined : () => handleReorderField(selectedField.id, "up")}
+                onMoveDown={isViewer ? undefined : () => handleReorderField(selectedField.id, "down")}
+                newOptionText={newOptionText}
+                setNewOptionText={setNewOptionText}
+                isFirst={fields.findIndex((f) => f.id === selectedField.id) === 0}
+                isLast={fields.findIndex((f) => f.id === selectedField.id) === fields.length - 1}
+              />
+              {isViewer && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 50,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 10,
+                    bgcolor: "rgba(255, 255, 255, 0.05)",
+                    cursor: "not-allowed",
+                  }}
+                />
+              )}
+            </Box>
           )}
         </Box>
       )}
@@ -2422,14 +2741,17 @@ export default function CreateForm() {
           TAB 1: THEME & APPEARANCE CUSTOMIZER
          ───────────────────────────────────────────────────────────── */}
       {activeTab === 1 && (
-        <ThemeCustomizer themeConfig={themeConfig} onChangeTheme={handleThemeChange} />
+        <fieldset disabled={isViewer} style={{ border: "none", margin: 0, padding: 0, width: "100%" }}>
+          <ThemeCustomizer themeConfig={themeConfig} onChangeTheme={handleThemeChange} />
+        </fieldset>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
           TAB 2: LOGIC RULES CREATOR (NESTED CONDITION GROUPS TREE)
          ───────────────────────────────────────────────────────────── */}
       {activeTab === 2 && (
-        <Paper elevation={0} sx={{ p: 4, borderRadius: 3, border: "1px solid #E2E8F0", bgcolor: "#FFFFFF", boxShadow: "0 4px 20px -2px rgba(15, 23, 42, 0.04)" }}>
+        <fieldset disabled={isViewer} style={{ border: "none", margin: 0, padding: 0, width: "100%" }}>
+          <Paper elevation={0} sx={{ p: 4, borderRadius: 3, border: "1px solid #E2E8F0", bgcolor: "#FFFFFF", boxShadow: "0 4px 20px -2px rgba(15, 23, 42, 0.04)" }}>
           <Box mb={3} display="flex" justifyContent="space-between" alignItems="center">
             <Box>
               <Typography variant="h6" fontWeight={800} sx={{ color: "#0F172A" }}>
@@ -3067,267 +3389,23 @@ export default function CreateForm() {
               );
             })}
           </Stack>
-        </Paper>
+          </Paper>
+        </fieldset>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 3: FORM INFORMATION & SETTINGS
+          TAB 3: SHARE
          ───────────────────────────────────────────────────────────── */}
       {activeTab === 3 && (
-        <Paper elevation={0} sx={{ p: 4, borderRadius: 3, border: "1px solid #E2E8F0", bgcolor: "#FFFFFF", boxShadow: "0 4px 20px -2px rgba(15, 23, 42, 0.04)" }}>
-          <Box mb={3}>
-            <Typography variant="h6" fontWeight={800} sx={{ color: "#0F172A" }}>
-              Basic Form Information &amp; Settings
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", mt: 0.3 }}>
-              Manage title, description, category, status, and view form metadata.
-            </Typography>
-          </Box>
 
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={7}>
-              <Stack spacing={2.5}>
-                {/* Form Title */}
-                <Box>
-                  <Typography variant="caption" fontWeight={700} sx={{ display: "block", mb: 0.8, color: "#475569" }}>
-                    FORM TITLE <span style={{ color: "#EF4444" }}>*</span>
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder="Enter form title..."
-                    value={form?.title || ""}
-                    onChange={(e) => handleFormMetaChange("title", e.target.value)}
-                    error={Boolean(titleError)}
-                    helperText={titleError || "Form title is required before publishing."}
-                    inputProps={{ maxLength: 200 }}
-                  />
-                </Box>
-
-                {/* Form Description */}
-                <Box>
-                  <Typography variant="caption" fontWeight={700} sx={{ display: "block", mb: 0.8, color: "#475569" }}>
-                    FORM DESCRIPTION (OPTIONAL)
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={4}
-                    size="small"
-                    placeholder="Provide a detailed description or instructions for respondents..."
-                    value={form?.description || ""}
-                    onChange={(e) => handleFormMetaChange("description", e.target.value)}
-                  />
-                </Box>
-
-                {/* Form Category */}
-                <Box>
-                  <Typography variant="caption" fontWeight={700} sx={{ display: "block", mb: 0.8, color: "#475569" }}>
-                    FORM CATEGORY
-                  </Typography>
-                  <Select
-                    fullWidth
-                    size="small"
-                    value={form?.category || "General"}
-                    onChange={(e) => handleFormMetaChange("category", e.target.value)}
-                  >
-                    {FORM_CATEGORIES.map((cat) => (
-                      <MenuItem key={cat} value={cat}>
-                        {cat}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </Box>
-
-                {/* Form Status */}
-                <Box>
-                  <Typography variant="caption" fontWeight={700} sx={{ display: "block", mb: 0.8, color: "#475569" }}>
-                    FORM STATUS
-                  </Typography>
-                  <Select
-                    fullWidth
-                    size="small"
-                    value={form?.status || "draft"}
-                    onChange={(e) => handleFormMetaChange("status", e.target.value)}
-                  >
-                    <MenuItem value="draft">Draft (Private editing)</MenuItem>
-                    <MenuItem value="published">Published (Live to respondents)</MenuItem>
-                    <MenuItem value="archived">Archived (Closed for new responses)</MenuItem>
-                  </Select>
-                </Box>
-
-                <Box pt={1}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={handleSaveDraft}
-                    sx={{ fontWeight: 700, px: 3, py: 1, borderRadius: 2 }}
-                  >
-                    Save Form Information
-                  </Button>
-                </Box>
-              </Stack>
-            </Grid>
-
-            <Grid item xs={12} md={5}>
-              <Paper elevation={0} sx={{ p: 3, bgcolor: "#F8FAFC", borderRadius: 3, border: "1px solid #E2E8F0" }}>
-                <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A", mb: 2 }}>
-                  Form Metadata &amp; Ownership
-                </Typography>
-
-                <Stack spacing={2}>
-                  <Box display="flex" alignItems="center" gap={1.5}>
-                    <PersonOutlineRoundedIcon sx={{ color: "#4F46E5", fontSize: 20 }} />
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ fontWeight: 700 }}>
-                        FORM OWNER
-                      </Typography>
-                      <Typography variant="body2" fontWeight={700} sx={{ color: "#0F172A" }}>
-                        {form?.owner_name || form?.owner_email || "Form Admin"}
-                      </Typography>
-                      {form?.owner_email && form?.owner_name && (
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          {form.owner_email}
-                        </Typography>
-                      )}
-                    </Box>
-                  </Box>
-
-                  <Divider />
-
-                  <Box display="flex" alignItems="center" gap={1.5}>
-                    <CalendarTodayOutlinedIcon sx={{ color: "#4F46E5", fontSize: 18 }} />
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ fontWeight: 700 }}>
-                        CREATION DATE
-                      </Typography>
-                      <Typography variant="body2" fontWeight={600} sx={{ color: "#334155" }}>
-                        {form?.created_at
-                          ? new Date(form.created_at).toLocaleString("en-US", {
-                              month: "long",
-                              day: "numeric",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "-"}
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  <Divider />
-
-                  <Box display="flex" alignItems="center" gap={1.5}>
-                    <CalendarTodayOutlinedIcon sx={{ color: "#059669", fontSize: 18 }} />
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ fontWeight: 700 }}>
-                        LAST UPDATED
-                      </Typography>
-                      <Typography variant="body2" fontWeight={600} sx={{ color: "#334155" }}>
-                        {form?.updated_at
-                          ? new Date(form.updated_at).toLocaleString("en-US", {
-                              month: "long",
-                              day: "numeric",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "-"}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Stack>
-              </Paper>
-
-              {/* Form Management & Actions */}
-              <Paper elevation={0} sx={{ p: 3, mt: 3, bgcolor: "#FFFFFF", borderRadius: 3, border: "1px solid #E2E8F0" }}>
-                <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A", mb: 2 }}>
-                  Form Management &amp; Actions
-                </Typography>
-                <Stack spacing={2}>
-                  {/* Duplicate Form Action */}
-                  <Paper elevation={0} sx={{ p: 2, bgcolor: "#F8FAFC", borderRadius: 2.5, border: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <Box>
-                      <Typography variant="body2" fontWeight={700} sx={{ color: "#0F172A" }}>
-                        Duplicate Form
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Create an exact copy with a new Form ID.
-                      </Typography>
-                    </Box>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      onClick={handleDuplicateForm}
-                      disabled={duplicatingForm}
-                      startIcon={duplicatingForm ? <CircularProgress size={14} color="inherit" /> : <FileCopyRoundedIcon sx={{ fontSize: 16 }} />}
-                      sx={{ fontWeight: 700, borderRadius: 2, textTransform: "none" }}
-                    >
-                      {duplicatingForm ? "Duplicating..." : "Duplicate"}
-                    </Button>
-                  </Paper>
-
-                  {/* Create New Form Action */}
-                  <Paper elevation={0} sx={{ p: 2, bgcolor: "#F8FAFC", borderRadius: 2.5, border: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <Box>
-                      <Typography variant="body2" fontWeight={700} sx={{ color: "#0F172A" }}>
-                        Start New Form
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Initialize a clean new form. Asks confirmation before discarding.
-                      </Typography>
-                    </Box>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      onClick={() => setOpenResetConfirm(true)}
-                      startIcon={<AddRoundedIcon sx={{ fontSize: 16 }} />}
-                      sx={{ fontWeight: 700, borderRadius: 2, textTransform: "none" }}
-                    >
-                      New Form
-                    </Button>
-                  </Paper>
-
-                  {/* Delete Form Action */}
-                  <Paper elevation={0} sx={{ p: 2, bgcolor: "#FEF2F2", borderRadius: 2.5, border: "1px solid #FECACA", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <Box>
-                      <Typography variant="body2" fontWeight={700} sx={{ color: "#DC2626" }}>
-                        Delete Form Permanently
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: "#EF4444", display: "block" }}>
-                        Permanently remove this form and all questions.
-                      </Typography>
-                    </Box>
-                    <Button
-                      variant="contained"
-                      color="error"
-                      size="small"
-                      onClick={() => setOpenDeleteConfirm(true)}
-                      startIcon={<DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />}
-                      sx={{ fontWeight: 700, borderRadius: 2, textTransform: "none" }}
-                    >
-                      Delete
-                    </Button>
-                  </Paper>
-                </Stack>
-              </Paper>
-            </Grid>
-          </Grid>
-        </Paper>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          TAB 4: SHARE & EMBED CODES
-         ───────────────────────────────────────────────────────────── */}
-      {activeTab === 4 && (
         <Paper elevation={0} sx={{ p: 4, borderRadius: 3, border: "1px solid #E2E8F0", bgcolor: "#FFFFFF", boxShadow: "0 4px 20px -2px rgba(15, 23, 42, 0.04)" }}>
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
             <Box>
               <Typography variant="h6" fontWeight={800} sx={{ color: "#0F172A" }}>
-                Share &amp; Embed Form Link
+                Share Form Link
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", mt: 0.3 }}>
-                Publish form to generate a public link and embed code for respondents.
+                Publish form to generate a public link for respondents.
               </Typography>
             </Box>
             <Chip
@@ -3338,7 +3416,7 @@ export default function CreateForm() {
           </Box>
 
           {version?.is_published ? (
-            <Stack spacing={3}>
+            <Stack spacing={2.5}>
               {/* Direct Link Section */}
               <Box>
                 <Typography variant="caption" fontWeight={700} sx={{ color: "#475569", display: "block", mb: 0.8 }}>
@@ -3376,268 +3454,230 @@ export default function CreateForm() {
 
               <Divider />
 
-              {/* Email Invitation Card */}
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 3,
-                  borderRadius: 3,
-                  border: "1px solid #C7D2FE",
-                  bgcolor: "#EEF2FF",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: 2,
-                }}
-              >
-                <Box display="flex" alignItems="center" gap={2}>
-                  <Box
-                    sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 2.5,
-                      bgcolor: "#FFFFFF",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      boxShadow: "0 2px 8px rgba(79, 70, 229, 0.12)",
-                    }}
-                  >
-                    <EmailOutlinedIcon sx={{ color: "#4F46E5", fontSize: 24 }} />
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#1E1B4B" }}>
-                      Email Form Invitation
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ color: "#4338CA", fontSize: "0.825rem" }}>
-                      Send an email directly to respondents with a clickable form link and customizable subject/message.
-                    </Typography>
-                  </Box>
-                </Box>
-
-                <Button
-                  variant="contained"
-                  onClick={() => setOpenEmailShare(true)}
+              {/* Compact Feature Grid */}
+              <Box>
+                <Typography variant="caption" fontWeight={700} sx={{ color: "#475569", display: "block", mb: 1.5, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Form Settings & Sharing Tools
+                </Typography>
+                <Box
                   sx={{
-                    fontWeight: 800,
-                    px: 3,
-                    py: 1,
-                    borderRadius: 2.5,
-                    bgcolor: "#4F46E5",
-                    "&:hover": { bgcolor: "#4338CA" },
-                    boxShadow: "0 4px 14px rgba(79, 70, 229, 0.25)",
-                    textTransform: "none",
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                    gap: 1.5,
                   }}
                 >
-                  Share via Email
-                </Button>
-              </Paper>
-
-              <Divider />
-
-              {/* QR Code Sharing Card */}
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 3,
-                  borderRadius: 3,
-                  border: "1px solid #E2E8F0",
-                  bgcolor: "#F8FAFC",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: 2,
-                }}
-              >
-                <Box display="flex" alignItems="center" gap={2}>
-                  <Box
+                  {/* Email Invitation */}
+                  <Paper
+                    elevation={0}
                     sx={{
-                      width: 44,
-                      height: 44,
+                      p: 1.75,
                       borderRadius: 2.5,
-                      bgcolor: "#FFFFFF",
+                      border: "1px solid #E2E8F0",
+                      bgcolor: "#F8FAFC",
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "center",
-                      boxShadow: "0 2px 8px rgba(15, 23, 42, 0.06)",
-                      border: "1px solid #E2E8F0",
+                      gap: 1.5,
+                      cursor: "pointer",
+                      transition: "all 0.18s ease",
+                      "&:hover": { bgcolor: "#EEF2FF", borderColor: "#A5B4FC", boxShadow: "0 2px 12px rgba(79,70,229,0.08)" },
                     }}
+                    onClick={() => setOpenEmailShare(true)}
                   >
-                    <QrCode2RoundedIcon sx={{ color: "#4F46E5", fontSize: 24 }} />
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A" }}>
-                      Form QR Code
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", fontSize: "0.825rem" }}>
-                      Generate &amp; download a printable QR code for physical posters, flyers, or digital displays.
-                    </Typography>
-                  </Box>
-                </Box>
-
-                <Button
-                  variant="outlined"
-                  startIcon={<QrCode2RoundedIcon sx={{ fontSize: 18 }} />}
-                  onClick={() => setOpenQrCode(true)}
-                  sx={{
-                    fontWeight: 800,
-                    px: 3,
-                    py: 1,
-                    borderRadius: 2.5,
-                    borderColor: "#4F46E5",
-                    color: "#4F46E5",
-                    "&:hover": { bgcolor: "#EEF2FF", borderColor: "#4338CA" },
-                    textTransform: "none",
-                  }}
-                >
-                  View QR Code
-                </Button>
-              </Paper>
-
-              <Divider />
-
-              {/* Form Scheduling Card */}
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 3,
-                  borderRadius: 3,
-                  border: "1px solid #E2E8F0",
-                  bgcolor: "#F8FAFC",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: 2,
-                }}
-              >
-                <Box display="flex" alignItems="center" gap={2}>
-                  <Box
-                    sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 2.5,
-                      bgcolor: "#FFFFFF",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      boxShadow: "0 2px 8px rgba(15, 23, 42, 0.06)",
-                      border: "1px solid #E2E8F0",
-                    }}
-                  >
-                    <EventAvailableRoundedIcon sx={{ color: "#4F46E5", fontSize: 24 }} />
-                  </Box>
-                  <Box>
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A" }}>
-                        Form Availability Schedule
-                      </Typography>
-                      {form?.is_scheduling_enabled && (
-                        <Chip label="Schedule Active" color="info" size="small" sx={{ fontWeight: 800, fontSize: "0.68rem", height: 20 }} />
-                      )}
+                    <Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: "#F1F5F9", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <EmailOutlinedIcon sx={{ color: "#4F46E5", fontSize: 18 }} />
                     </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", fontSize: "0.825rem" }}>
-                      Set start and end date/time limits for receiving responses.
-                    </Typography>
-                  </Box>
-                </Box>
+                    <Box flex={1} minWidth={0}>
+                      <Typography variant="caption" fontWeight={800} sx={{ color: "#0F172A", display: "block", lineHeight: 1.3 }}>
+                        Email Invitation
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: "#64748B", fontSize: "0.7rem", display: "block", lineHeight: 1.3 }}>
+                        Send invite to respondents
+                      </Typography>
+                    </Box>
+                    <ArrowForwardRoundedIcon sx={{ color: "#94A3B8", fontSize: 16, flexShrink: 0 }} />
+                  </Paper>
 
-                <Button
-                  variant="outlined"
-                  startIcon={<EventAvailableRoundedIcon sx={{ fontSize: 18 }} />}
-                  onClick={() => setOpenSchedule(true)}
-                  sx={{
-                    fontWeight: 800,
-                    px: 3,
-                    py: 1,
-                    borderRadius: 2.5,
-                    borderColor: "#4F46E5",
-                    color: "#4F46E5",
-                    "&:hover": { bgcolor: "#EEF2FF", borderColor: "#4338CA" },
-                    textTransform: "none",
-                  }}
-                >
-                  {form?.is_scheduling_enabled ? "Edit Schedule" : "Set Schedule"}
-                </Button>
-              </Paper>
-
-              <Divider />
-
-              {/* Response Limit Card */}
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 3,
-                  borderRadius: 3,
-                  border: "1px solid #E2E8F0",
-                  bgcolor: "#F8FAFC",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: 2,
-                }}
-              >
-                <Box display="flex" alignItems="center" gap={2}>
-                  <Box
+                  {/* QR Code */}
+                  <Paper
+                    elevation={0}
                     sx={{
-                      width: 44,
-                      height: 44,
+                      p: 1.75,
                       borderRadius: 2.5,
-                      bgcolor: "#FFFFFF",
+                      border: "1px solid #E2E8F0",
+                      bgcolor: "#F8FAFC",
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "center",
-                      boxShadow: "0 2px 8px rgba(15, 23, 42, 0.06)",
-                      border: "1px solid #E2E8F0",
+                      gap: 1.5,
+                      cursor: "pointer",
+                      transition: "all 0.18s ease",
+                      "&:hover": { bgcolor: "#EEF2FF", borderColor: "#A5B4FC", boxShadow: "0 2px 12px rgba(79,70,229,0.08)" },
                     }}
+                    onClick={() => setOpenQrCode(true)}
                   >
-                    <BlockRoundedIcon sx={{ color: "#EF4444", fontSize: 24 }} />
-                  </Box>
-                  <Box>
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#0F172A" }}>
-                        Response Limit
-                      </Typography>
-                      {form?.is_response_limit_enabled && form?.max_response_limit && (
-                        <Chip
-                          label={`${form.submissions_count ?? 0} / ${form.max_response_limit}`}
-                          color={
-                            (form.submissions_count ?? 0) >= form.max_response_limit
-                              ? "error"
-                              : "info"
-                          }
-                          size="small"
-                          sx={{ fontWeight: 800, fontSize: "0.68rem", height: 20 }}
-                        />
-                      )}
+                    <Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: "#F1F5F9", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <QrCode2RoundedIcon sx={{ color: "#4F46E5", fontSize: 18 }} />
                     </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ color: "#64748B", fontSize: "0.825rem" }}>
-                      Set a maximum number of submissions this form can accept.
-                    </Typography>
-                  </Box>
-                </Box>
+                    <Box flex={1} minWidth={0}>
+                      <Typography variant="caption" fontWeight={800} sx={{ color: "#0F172A", display: "block", lineHeight: 1.3 }}>
+                        QR Code
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: "#64748B", fontSize: "0.7rem", display: "block", lineHeight: 1.3 }}>
+                        Download printable QR
+                      </Typography>
+                    </Box>
+                    <ArrowForwardRoundedIcon sx={{ color: "#94A3B8", fontSize: 16, flexShrink: 0 }} />
+                  </Paper>
 
-                <Button
-                  variant="outlined"
-                  startIcon={<BlockRoundedIcon sx={{ fontSize: 18 }} />}
-                  onClick={() => setOpenResponseLimit(true)}
-                  sx={{
-                    fontWeight: 800,
-                    px: 3,
-                    py: 1,
-                    borderRadius: 2.5,
-                    borderColor: "#4F46E5",
-                    color: "#4F46E5",
-                    "&:hover": { bgcolor: "#EEF2FF", borderColor: "#4338CA" },
-                    textTransform: "none",
-                  }}
-                >
-                  {form?.is_response_limit_enabled ? "Edit Limit" : "Set Limit"}
-                </Button>
-              </Paper>
+                  {/* Schedule */}
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 1.75,
+                      borderRadius: 2.5,
+                      border: form?.is_scheduling_enabled ? "1px solid #BAE6FD" : "1px solid #E2E8F0",
+                      bgcolor: form?.is_scheduling_enabled ? "#F0F9FF" : "#F8FAFC",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.5,
+                      cursor: isViewer ? "default" : "pointer",
+                      transition: "all 0.18s ease",
+                      opacity: isViewer ? 0.6 : 1,
+                      "&:hover": isViewer ? {} : { bgcolor: "#EEF2FF", borderColor: "#A5B4FC", boxShadow: "0 2px 12px rgba(79,70,229,0.08)" },
+                    }}
+                    onClick={() => !isViewer && setOpenSchedule(true)}
+                  >
+                    <Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: form?.is_scheduling_enabled ? "#0EA5E9" : "#F1F5F9", border: form?.is_scheduling_enabled ? "none" : "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <EventAvailableRoundedIcon sx={{ color: form?.is_scheduling_enabled ? "#fff" : "#4F46E5", fontSize: 18 }} />
+                    </Box>
+                    <Box flex={1} minWidth={0}>
+                      <Box display="flex" alignItems="center" gap={0.8}>
+                        <Typography variant="caption" fontWeight={800} sx={{ color: "#0F172A", display: "block", lineHeight: 1.3 }}>
+                          Availability Schedule
+                        </Typography>
+                        {form?.is_scheduling_enabled && (
+                          <Chip label="On" color="info" size="small" sx={{ fontWeight: 800, fontSize: "0.6rem", height: 16, "& .MuiChip-label": { px: 0.8 } }} />
+                        )}
+                      </Box>
+                      <Typography variant="caption" sx={{ color: "#64748B", fontSize: "0.7rem", display: "block", lineHeight: 1.3 }}>
+                        {form?.is_scheduling_enabled ? "Schedule active" : "Set open/close times"}
+                      </Typography>
+                    </Box>
+                    <ArrowForwardRoundedIcon sx={{ color: "#94A3B8", fontSize: 16, flexShrink: 0 }} />
+                  </Paper>
+
+                  {/* Response Limit */}
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 1.75,
+                      borderRadius: 2.5,
+                      border: form?.is_response_limit_enabled ? "1px solid #FECACA" : "1px solid #E2E8F0",
+                      bgcolor: form?.is_response_limit_enabled ? "#FFF5F5" : "#F8FAFC",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.5,
+                      cursor: isViewer ? "default" : "pointer",
+                      transition: "all 0.18s ease",
+                      opacity: isViewer ? 0.6 : 1,
+                      "&:hover": isViewer ? {} : { bgcolor: "#EEF2FF", borderColor: "#A5B4FC", boxShadow: "0 2px 12px rgba(79,70,229,0.08)" },
+                    }}
+                    onClick={() => !isViewer && setOpenResponseLimit(true)}
+                  >
+                    <Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: form?.is_response_limit_enabled ? "#EF4444" : "#F1F5F9", border: form?.is_response_limit_enabled ? "none" : "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <BlockRoundedIcon sx={{ color: form?.is_response_limit_enabled ? "#fff" : "#EF4444", fontSize: 18 }} />
+                    </Box>
+                    <Box flex={1} minWidth={0}>
+                      <Box display="flex" alignItems="center" gap={0.8}>
+                        <Typography variant="caption" fontWeight={800} sx={{ color: "#0F172A", display: "block", lineHeight: 1.3 }}>
+                          Response Limit
+                        </Typography>
+                        {form?.is_response_limit_enabled && form?.max_response_limit && (
+                          <Chip
+                            label={`${form.submissions_count ?? 0}/${form.max_response_limit}`}
+                            color={(form.submissions_count ?? 0) >= form.max_response_limit ? "error" : "info"}
+                            size="small"
+                            sx={{ fontWeight: 800, fontSize: "0.6rem", height: 16, "& .MuiChip-label": { px: 0.8 } }}
+                          />
+                        )}
+                      </Box>
+                      <Typography variant="caption" sx={{ color: "#64748B", fontSize: "0.7rem", display: "block", lineHeight: 1.3 }}>
+                        {form?.is_response_limit_enabled ? `Max ${form.max_response_limit} responses` : "Cap submissions"}
+                      </Typography>
+                    </Box>
+                    <ArrowForwardRoundedIcon sx={{ color: "#94A3B8", fontSize: 16, flexShrink: 0 }} />
+                  </Paper>
+
+                  {/* Password Protection */}
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 1.75,
+                      borderRadius: 2.5,
+                      border: form?.is_password_protected ? "1px solid #C7D2FE" : "1px solid #E2E8F0",
+                      bgcolor: form?.is_password_protected ? "#EEF2FF" : "#F8FAFC",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.5,
+                      cursor: isViewer ? "default" : "pointer",
+                      transition: "all 0.18s ease",
+                      opacity: isViewer ? 0.6 : 1,
+                      "&:hover": isViewer ? {} : { bgcolor: "#EEF2FF", borderColor: "#A5B4FC", boxShadow: "0 2px 12px rgba(79,70,229,0.08)" },
+                    }}
+                    onClick={() => !isViewer && setOpenPasswordProtect(true)}
+                  >
+                    <Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: form?.is_password_protected ? "#4F46E5" : "#F1F5F9", border: form?.is_password_protected ? "none" : "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <VpnKeyRoundedIcon sx={{ color: form?.is_password_protected ? "#fff" : "#4F46E5", fontSize: 18 }} />
+                    </Box>
+                    <Box flex={1} minWidth={0}>
+                      <Box display="flex" alignItems="center" gap={0.8}>
+                        <Typography variant="caption" fontWeight={800} sx={{ color: "#0F172A", display: "block", lineHeight: 1.3 }}>
+                          Password Protection
+                        </Typography>
+                        {form?.is_password_protected && (
+                          <Chip label="On" color="primary" size="small" sx={{ fontWeight: 800, fontSize: "0.6rem", height: 16, "& .MuiChip-label": { px: 0.8 } }} />
+                        )}
+                      </Box>
+                      <Typography variant="caption" sx={{ color: "#64748B", fontSize: "0.7rem", display: "block", lineHeight: 1.3 }}>
+                        {form?.is_password_protected ? "Form is password locked" : "Lock with a password"}
+                      </Typography>
+                    </Box>
+                    <ArrowForwardRoundedIcon sx={{ color: "#94A3B8", fontSize: 16, flexShrink: 0 }} />
+                  </Paper>
+
+                  {/* Collaborators — owner only */}
+                  {form?.user_role === "owner" && (
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        p: 1.75,
+                        borderRadius: 2.5,
+                        border: "1px solid #E2E8F0",
+                        bgcolor: "#F8FAFC",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1.5,
+                        cursor: "pointer",
+                        transition: "all 0.18s ease",
+                        "&:hover": { bgcolor: "#EEF2FF", borderColor: "#A5B4FC", boxShadow: "0 2px 12px rgba(79,70,229,0.08)" },
+                      }}
+                      onClick={() => setOpenCollaborators(true)}
+                    >
+                      <Box sx={{ width: 34, height: 34, borderRadius: 2, bgcolor: "#F1F5F9", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <GroupAddRoundedIcon sx={{ color: "#4F46E5", fontSize: 18 }} />
+                      </Box>
+                      <Box flex={1} minWidth={0}>
+                        <Typography variant="caption" fontWeight={800} sx={{ color: "#0F172A", display: "block", lineHeight: 1.3 }}>
+                          Collaborators
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: "#64748B", fontSize: "0.7rem", display: "block", lineHeight: 1.3 }}>
+                          Invite editors & viewers
+                        </Typography>
+                      </Box>
+                      <ArrowForwardRoundedIcon sx={{ color: "#94A3B8", fontSize: 16, flexShrink: 0 }} />
+                    </Paper>
+                  )}
+                </Box>
+              </Box>
 
               {/* Render Modals */}
               <EmailShareModal
@@ -3667,7 +3707,23 @@ export default function CreateForm() {
                 form={form}
                 onLimitUpdated={(updatedForm) => setForm(updatedForm)}
               />
+
+              <FormPasswordModal
+                open={openPasswordProtect}
+                onClose={() => setOpenPasswordProtect(false)}
+                form={form}
+                onPasswordUpdated={(updatedForm) => setForm(updatedForm)}
+              />
+
+              <FormCollaboratorsModal
+                open={openCollaborators}
+                onClose={() => setOpenCollaborators(false)}
+                form={form}
+              />
+
+
             </Stack>
+
           ) : (
             <Paper elevation={0} sx={{ p: 4, textAlign: "center", bgcolor: "#FFF7ED", border: "1px solid #FDE68A", borderRadius: 3 }}>
               <InfoOutlinedIcon sx={{ color: "#D97706", fontSize: 40 }} />
@@ -3675,7 +3731,7 @@ export default function CreateForm() {
                 Form is Currently in Draft Mode
               </Typography>
               <Typography variant="body2" sx={{ color: "#B45309", mt: 0.5, mb: 2.5 }}>
-                Click the <strong>Publish</strong> button in the top action header bar to generate your public link and embed code.
+                Click the <strong>Publish</strong> button in the top action header bar to generate your public link.
               </Typography>
               <Button
                 variant="contained"
@@ -3872,9 +3928,41 @@ export default function CreateForm() {
                             disabled={f.is_read_only}
                             placeholder={f.show_placeholder !== false ? (f.placeholder || "0") : ""}
                             value={previewAnswers[f.id] || ""}
-                            onChange={(e) => setPreviewAnswers({ ...previewAnswers, [f.id]: e.target.value })}
+                            onChange={(e) => handlePreviewInputChange(f.id, e.target.value)}
                             error={hasErr}
                           />
+                        )}
+
+                        {f.field_type === "formula" && (
+                          <Paper
+                            elevation={0}
+                            sx={{
+                              p: 2,
+                              borderRadius: 2.5,
+                              bgcolor: "#F8FAFC",
+                              border: String(previewAnswers[f.id] || "").startsWith("ERR:") ? "1.5px solid #FCA5A5" : "1.5px solid #E2E8F0",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 2,
+                            }}
+                          >
+                            <Box flex={1}>
+                              <Typography variant="body2" fontWeight={600} color="text.secondary" sx={{ display: "flex", alignItems: "center", gap: 0.8, mb: 0.5 }}>
+                                <FunctionsRoundedIcon sx={{ fontSize: 18, color: "#6366F1" }} />
+                                Calculated Result
+                              </Typography>
+                              <Typography variant="h5" fontWeight={800} sx={{ color: String(previewAnswers[f.id] || "").startsWith("ERR:") ? "#EF4444" : "#0F172A" }}>
+                                {formatFormulaValue(previewAnswers[f.id], f.decimal_places, f.number_prefix, f.number_suffix)}
+                              </Typography>
+                              {String(previewAnswers[f.id] || "").startsWith("ERR:") && (
+                                <Typography variant="caption" sx={{ color: "#EF4444", fontWeight: 600, display: "block", mt: 0.5 }}>
+                                  {previewAnswers[f.id]}
+                                </Typography>
+                              )}
+                            </Box>
+                            <Chip label="Auto-Calculated" size="small" sx={{ bgcolor: "#EEF2FF", color: "#4F46E5", fontWeight: 700, fontSize: "0.75rem" }} />
+                          </Paper>
                         )}
 
                         {f.field_type === "date" && (
@@ -4483,6 +4571,238 @@ export default function CreateForm() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Form Settings Modal */}
+      <Dialog
+        open={openSettingsModal}
+        onClose={() => setOpenSettingsModal(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3.5,
+            p: 0.5,
+            boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.18)",
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            pb: 1,
+            pt: 2.5,
+            px: 3,
+          }}
+        >
+          <Box display="flex" alignItems="center" gap={1.5}>
+            <Box
+              sx={{
+                width: 42,
+                height: 42,
+                borderRadius: 2.5,
+                bgcolor: "#F8FAFC",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: "1px solid #E2E8F0",
+              }}
+            >
+              <SettingsRoundedIcon sx={{ color: "#4F46E5", fontSize: 24 }} />
+            </Box>
+            <Box>
+              <Typography
+                variant="h6"
+                fontWeight={800}
+                sx={{ color: "#0F172A", fontSize: "1.15rem" }}
+              >
+                Form Settings
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Configure your form's basic details and visibility status
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton size="small" onClick={() => setOpenSettingsModal(false)} sx={{ color: "#64748B" }}>
+            <CloseRoundedIcon sx={{ fontSize: 20 }} />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ px: 3, py: 2 }}>
+          <Stack spacing={3} sx={{ mt: 1 }}>
+            {/* Form Title */}
+            <Box>
+              <Typography variant="caption" fontWeight={800} sx={{ display: "block", mb: 1, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Form Title <span style={{ color: "#EF4444" }}>*</span>
+              </Typography>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Enter form title..."
+                value={form?.title || ""}
+                onChange={(e) => handleFormMetaChange("title", e.target.value)}
+                error={Boolean(titleError)}
+                helperText={titleError || "The title appears at the top of your public form."}
+                inputProps={{ maxLength: 200 }}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+              />
+            </Box>
+
+            {/* Form Description */}
+            <Box>
+              <Typography variant="caption" fontWeight={800} sx={{ display: "block", mb: 1, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Description (Optional)
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                size="small"
+                placeholder="Describe the purpose of this form..."
+                value={form?.description || ""}
+                onChange={(e) => handleFormMetaChange("description", e.target.value)}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+              />
+            </Box>
+
+            {/* Category & Status in 2 columns */}
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2.5 }}>
+              <Box>
+                <Typography variant="caption" fontWeight={800} sx={{ display: "block", mb: 1, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Category
+                </Typography>
+                <Select
+                  fullWidth
+                  size="small"
+                  value={form?.category || "General"}
+                  onChange={(e) => handleFormMetaChange("category", e.target.value)}
+                  sx={{ borderRadius: 2 }}
+                >
+                  {FORM_CATEGORIES.map((cat) => (
+                    <MenuItem key={cat} value={cat}>
+                      {cat}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Box>
+
+              <Box>
+                <Typography variant="caption" fontWeight={800} sx={{ display: "block", mb: 1, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Status
+                </Typography>
+                <Select
+                  fullWidth
+                  size="small"
+                  value={form?.status || "draft"}
+                  onChange={(e) => handleFormMetaChange("status", e.target.value)}
+                  sx={{ borderRadius: 2 }}
+                >
+                  <MenuItem value="draft">Draft (Private edit)</MenuItem>
+                  <MenuItem value="published">Published (Live to public)</MenuItem>
+                  <MenuItem value="archived">Archived (Closed to responses)</MenuItem>
+                </Select>
+              </Box>
+            </Box>
+
+            <Divider />
+
+            {/* Metadata Bottom Bar */}
+            <Box display="flex" flexWrap="wrap" gap={{ xs: 2, sm: 3 }} sx={{ py: 0.5 }}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <PersonOutlineRoundedIcon sx={{ color: "#94A3B8", fontSize: 16 }} />
+                <Typography variant="caption" sx={{ color: "#64748B", fontWeight: 500 }}>
+                  Owner: <strong>{form?.owner_name || form?.owner_email || "Form Admin"}</strong>
+                </Typography>
+              </Box>
+              {form?.created_at && (
+                <Box display="flex" alignItems="center" gap={1}>
+                  <CalendarTodayOutlinedIcon sx={{ color: "#94A3B8", fontSize: 14 }} />
+                  <Typography variant="caption" sx={{ color: "#64748B", fontWeight: 500 }}>
+                    Created: <strong>{new Date(form.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}</strong>
+                  </Typography>
+                </Box>
+              )}
+              {form?.updated_at && (
+                <Box display="flex" alignItems="center" gap={1}>
+                  <UpdateRoundedIcon sx={{ color: "#94A3B8", fontSize: 16 }} />
+                  <Typography variant="caption" sx={{ color: "#64748B", fontWeight: 500 }}>
+                    Updated: <strong>{new Date(form.updated_at).toLocaleDateString(undefined, { dateStyle: "medium" })}</strong>
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Stack>
+        </DialogContent>
+
+        <DialogActions
+          sx={{ px: 3, pb: 2.5, pt: 1.5, borderTop: "1px solid #F1F5F9" }}
+        >
+          <Button
+            variant="outlined"
+            onClick={() => setOpenSettingsModal(false)}
+            sx={{
+              fontWeight: 600,
+              borderRadius: 2,
+              textTransform: "none",
+              borderColor: "#CBD5E1",
+            }}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={async () => {
+              await handleSaveDraft();
+              setOpenSettingsModal(false);
+            }}
+            startIcon={<SaveRoundedIcon sx={{ fontSize: 18 }} />}
+            sx={{
+              fontWeight: 700,
+              borderRadius: 2,
+              px: 3,
+              bgcolor: "#4F46E5",
+              "&:hover": { bgcolor: "#4338CA" },
+              textTransform: "none",
+              boxShadow: "0 4px 12px rgba(79, 70, 229, 0.25)",
+            }}
+          >
+            Save Settings
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* AI Form Doctor Audit & Fix Drawer */}
+      <AIFormDoctorDrawer
+        open={openDoctorDrawer}
+        onClose={() => setOpenDoctorDrawer(false)}
+        form={form}
+        fields={fields}
+        conditionalRules={rules}
+        onApplyFix={handleApplyDoctorFix}
+      />
+
+      {/* AI Form Simulator Modal */}
+      <AIFormSimulatorModal
+        open={openSimulatorModal}
+        onClose={() => setOpenSimulatorModal(false)}
+        form={form}
+        fields={fields}
+        conditionalRules={rules}
+        onApplyFix={handleApplyDoctorFix}
+      />
+
+      {/* Micro-Verification & Security Modal */}
+      <FormVerificationModal
+        open={openVerificationModal}
+        onClose={() => setOpenVerificationModal(false)}
+        form={form}
+        onVerificationUpdated={(updatedForm) => {
+          setForm(updatedForm);
+          loadFormData();
+        }}
+      />
     </Box>
   );
 }

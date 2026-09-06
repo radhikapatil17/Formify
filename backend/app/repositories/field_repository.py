@@ -38,5 +38,9 @@ def update_field(db: Session):
 def delete_field(db: Session, field: Field):
     db.query(FieldOption).filter(FieldOption.field_id == field.id).delete(synchronize_session=False)
     db.query(ResponseValue).filter(ResponseValue.field_id == field.id).delete(synchronize_session=False)
+    db.query(ConditionalRule).filter(
+        (ConditionalRule.trigger_field_id == field.id) |
+        (ConditionalRule.target_field_id == field.id)
+    ).delete(synchronize_session=False)
     db.delete(field)
     db.commit()

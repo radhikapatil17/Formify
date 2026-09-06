@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from app.core.security import hash_password
 
 from app.models.form import Form
 from app.models.form_version import FormVersion
@@ -8,6 +9,7 @@ from app.models.field_option import FieldOption
 from app.models.conditional_rule import ConditionalRule
 from app.models.submission import Submission
 from app.models.user import User
+from app.models.form_collaborator import FormCollaborator
 
 from app.schemas.form_schema import (
     FormCreate,
@@ -24,7 +26,7 @@ from app.repositories.form_repository import (
 )
 
 
-def _build_form_response(f: Form, db: Session) -> FormResponse:
+def _build_form_response(f: Form, db: Session, current_user_id: int | None = None) -> FormResponse:
     versions = db.query(FormVersion).filter(FormVersion.form_id == f.id).all()
     published_ver = next((v for v in versions if v.is_published), None)
     latest_ver = max(versions, key=lambda v: v.version_number) if versions else None
@@ -43,6 +45,20 @@ def _build_form_response(f: Form, db: Session) -> FormResponse:
     owner_email = owner.email if owner else None
     owner_name = owner.name if owner else (owner.email if owner else f"User #{f.owner_id}")
 
+    # Determine user role
+    role = None
+    if current_user_id is not None:
+        if f.owner_id == current_user_id:
+            role = "owner"
+        else:
+            collab = db.query(FormCollaborator).filter(
+                FormCollaborator.form_id == f.id,
+                FormCollaborator.user_id == current_user_id,
+                FormCollaborator.status == "accepted"
+            ).first()
+            if collab:
+                role = collab.role
+
     return FormResponse(
         id=f.id,
         title=f.title,
@@ -55,6 +71,13 @@ def _build_form_response(f: Form, db: Session) -> FormResponse:
         schedule_end_time=getattr(f, "schedule_end_time", None),
         is_response_limit_enabled=getattr(f, "is_response_limit_enabled", False) or False,
         max_response_limit=getattr(f, "max_response_limit", None),
+        is_password_protected=getattr(f, "is_password_protected", False) or False,
+        is_email_otp_enabled=getattr(f, "is_email_otp_enabled", False) or False,
+        is_phone_otp_enabled=getattr(f, "is_phone_otp_enabled", False) or False,
+        otp_expiry_minutes=getattr(f, "otp_expiry_minutes", 10) or 10,
+        max_otp_attempts=getattr(f, "max_otp_attempts", 3) or 3,
+        otp_cooldown_seconds=getattr(f, "otp_cooldown_seconds", 60) or 60,
+        require_verification_to_submit=getattr(f, "require_verification_to_submit", False) or False,
         owner_id=f.owner_id,
         owner_email=owner_email,
         owner_name=owner_name,
@@ -64,6 +87,7 @@ def _build_form_response(f: Form, db: Session) -> FormResponse:
         fields_count=fields_cnt,
         public_link=pub_link,
         latest_version_id=latest_ver_id,
+        user_role=role,
     )
 
 
@@ -92,7 +116,7 @@ def create_new_form(
     db.commit()
     db.refresh(saved)
 
-    return _build_form_response(saved, db)
+    return _build_form_response(saved, db, current_user.id)
 
 
 def duplicate_existing_form(
@@ -100,12 +124,8 @@ def duplicate_existing_form(
     current_user: User,
     db: Session
 ):
-    source_form = get_form_by_id(db, form_id)
-    if not source_form:
-        raise HTTPException(
-            status_code=404,
-            detail="Form not found"
-        )
+    from app.core.permissions import verify_form_access
+    source_form = verify_form_access(db, current_user.id, form_id, required_role="viewer")
 
     new_form = Form(
         title=f"{source_form.title} (Copy)",
@@ -138,47 +158,46 @@ def duplicate_existing_form(
                 label=sf.label,
                 field_type=sf.field_type,
                 placeholder=sf.placeholder or "",
-                is_required=sf.is_required or False,
+                is_required=sf.is_required,
                 field_order=sf.field_order,
-                help_text=getattr(sf, "help_text", None),
-                description=getattr(sf, "description", None),
-                is_read_only=getattr(sf, "is_read_only", False),
-                is_hidden=getattr(sf, "is_hidden", False),
-                default_value=getattr(sf, "default_value", None),
-                width=getattr(sf, "width", "full"),
-                label_position=getattr(sf, "label_position", "top"),
-                show_placeholder=getattr(sf, "show_placeholder", True),
-                min_length=getattr(sf, "min_length", None),
-                max_length=getattr(sf, "max_length", None),
-                regex_pattern=getattr(sf, "regex_pattern", None),
-                validation_message=getattr(sf, "validation_message", None),
-                shuffle_options=getattr(sf, "shuffle_options", False),
-                allow_other=getattr(sf, "allow_other", False),
-                allow_multiple=getattr(sf, "allow_multiple", False),
-                max_selections=getattr(sf, "max_selections", None),
-                allowed_file_types=getattr(sf, "allowed_file_types", None),
-                max_file_size_mb=getattr(sf, "max_file_size_mb", None),
-                max_files=getattr(sf, "max_files", 1)
+                help_text=sf.help_text,
+                description=sf.description,
+                is_read_only=sf.is_read_only,
+                is_hidden=sf.is_hidden,
+                default_value=sf.default_value,
+                width=sf.width,
+                label_position=sf.label_position,
+                show_placeholder=sf.show_placeholder if hasattr(sf, 'show_placeholder') else True,
+                min_length=sf.min_length,
+                max_length=sf.max_length,
+                regex_pattern=sf.regex_pattern,
+                validation_message=sf.validation_message,
+                shuffle_options=sf.shuffle_options,
+                allow_other=sf.allow_other,
+                allow_multiple=sf.allow_multiple,
+                max_selections=sf.max_selections,
+                allowed_file_types=sf.allowed_file_types,
+                max_file_size_mb=sf.max_file_size_mb,
+                max_files=sf.max_files,
             )
             db.add(new_field)
             db.commit()
             db.refresh(new_field)
             field_id_map[sf.id] = new_field.id
 
-            opts = db.query(FieldOption).filter(FieldOption.field_id == sf.id).order_by(FieldOption.option_order).all()
-            for opt in opts:
+            sf_opts = db.query(FieldOption).filter(FieldOption.field_id == sf.id).all()
+            for opt in sf_opts:
                 new_opt = FieldOption(
                     field_id=new_field.id,
                     option_text=opt.option_text,
                     option_order=opt.option_order
                 )
                 db.add(new_opt)
-            db.commit()
 
         source_rules = db.query(ConditionalRule).filter(ConditionalRule.form_version_id == source_version.id).all()
         for sr in source_rules:
-            new_trigger = field_id_map.get(sr.trigger_field_id) if sr.trigger_field_id else None
-            new_target = field_id_map.get(sr.target_field_id) if sr.target_field_id else None
+            new_trigger = field_id_map.get(sr.trigger_field_id)
+            new_target = field_id_map.get(sr.target_field_id)
             new_rule = ConditionalRule(
                 form_version_id=new_version.id,
                 trigger_field_id=new_trigger,
@@ -193,19 +212,31 @@ def duplicate_existing_form(
             db.add(new_rule)
         db.commit()
 
-    return _build_form_response(saved_form, db)
+    return _build_form_response(saved_form, db, current_user.id)
 
 
 def get_forms(db: Session, current_user: User):
-    forms = get_all_forms(db, owner_id=current_user.id)
-    return [_build_form_response(f, db) for f in forms]
+    collabs = db.query(FormCollaborator.form_id).filter(
+        FormCollaborator.user_id == current_user.id,
+        FormCollaborator.status == "accepted"
+    ).all()
+    collaborator_form_ids = [c[0] for c in collabs]
+    forms = db.query(Form).filter(
+        (Form.owner_id == current_user.id) | (Form.id.in_(collaborator_form_ids))
+    ).all()
+    return [_build_form_response(f, db, current_user.id) for f in forms]
 
 
 def get_single_form(
     form_id: int,
-    db: Session
+    db: Session,
+    current_user_id: int | None = None
 ):
-    form = get_form_by_id(db, form_id)
+    if current_user_id is not None:
+        from app.core.permissions import verify_form_access
+        form = verify_form_access(db, current_user_id, form_id, required_role="viewer")
+    else:
+        form = get_form_by_id(db, form_id)
 
     if not form:
         raise HTTPException(
@@ -213,7 +244,7 @@ def get_single_form(
             detail="Form not found"
         )
 
-    return _build_form_response(form, db)
+    return _build_form_response(form, db, current_user_id)
 
 
 def edit_form(
@@ -222,19 +253,8 @@ def edit_form(
     current_user: User,
     db: Session
 ):
-    form = get_form_by_id(db, form_id)
-
-    if not form:
-        raise HTTPException(
-            status_code=404,
-            detail="Form not found"
-        )
-
-    if form.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized"
-        )
+    from app.core.permissions import verify_form_access
+    form = verify_form_access(db, current_user.id, form_id, required_role="editor")
 
     if form_data.title is not None:
         if not form_data.title.strip():
@@ -276,9 +296,44 @@ def edit_form(
     if form_data.max_response_limit is not None or "max_response_limit" in form_data.model_fields_set:
         form.max_response_limit = form_data.max_response_limit
 
+    # Password protection
+    if form_data.is_password_protected is not None:
+        form.is_password_protected = form_data.is_password_protected
+        if not form_data.is_password_protected:
+            # Disabling protection — clear the stored hash
+            form.password_hash = None
+
+    if form_data.password is not None and form_data.password.strip():
+        if len(form_data.password) < 4:
+            raise HTTPException(
+                status_code=400,
+                detail="Form password must be at least 4 characters long"
+            )
+        form.password_hash = hash_password(form_data.password)
+        form.is_password_protected = True
+
+    # Micro-Verification Settings
+    if form_data.is_email_otp_enabled is not None:
+        form.is_email_otp_enabled = form_data.is_email_otp_enabled
+
+    if form_data.is_phone_otp_enabled is not None:
+        form.is_phone_otp_enabled = form_data.is_phone_otp_enabled
+
+    if form_data.otp_expiry_minutes is not None:
+        form.otp_expiry_minutes = form_data.otp_expiry_minutes
+
+    if form_data.max_otp_attempts is not None:
+        form.max_otp_attempts = form_data.max_otp_attempts
+
+    if form_data.otp_cooldown_seconds is not None:
+        form.otp_cooldown_seconds = form_data.otp_cooldown_seconds
+
+    if form_data.require_verification_to_submit is not None:
+        form.require_verification_to_submit = form_data.require_verification_to_submit
+
     update_form(db)
 
-    return _build_form_response(form, db)
+    return _build_form_response(form, db, current_user.id)
 
 
 def remove_form(
@@ -286,19 +341,8 @@ def remove_form(
     current_user: User,
     db: Session
 ):
-    form = get_form_by_id(db, form_id)
-
-    if not form:
-        raise HTTPException(
-            status_code=404,
-            detail="Form not found"
-        )
-
-    if form.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized"
-        )
+    from app.core.permissions import verify_form_access
+    form = verify_form_access(db, current_user.id, form_id, required_role="owner")
 
     delete_form(db, form)
 

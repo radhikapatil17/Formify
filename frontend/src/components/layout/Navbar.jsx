@@ -272,6 +272,7 @@ export default function Navbar({ onMobileMenuToggle }) {
   const handleLogout = () => {
     handleCloseMenu();
     localStorage.removeItem("token");
+    localStorage.removeItem("user_name");
     toast.success("Logged out successfully");
     navigate("/login");
   };

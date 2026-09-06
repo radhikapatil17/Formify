@@ -9,8 +9,10 @@ from app.models.user import User
 from app.models.form import Form
 from app.models.form_version import FormVersion
 from app.models.field import Field
+from app.models.field_option import FieldOption
 from app.models.submission import Submission
 from app.models.response_value import ResponseValue
+from app.models.form_collaborator import FormCollaborator
 
 router = APIRouter(
     prefix="/analytics",
@@ -40,7 +42,15 @@ def get_analytics_overview(
     Scoped strictly to current user's forms and selected date range.
     """
     # 1. User forms & version IDs
-    forms_query = db.query(Form.id).filter(Form.owner_id == current_user.id)
+    collabs = db.query(FormCollaborator.form_id).filter(
+        FormCollaborator.user_id == current_user.id,
+        FormCollaborator.status == "accepted"
+    ).all()
+    collaborator_form_ids = [c[0] for c in collabs]
+
+    forms_query = db.query(Form.id).filter(
+        (Form.owner_id == current_user.id) | (Form.id.in_(collaborator_form_ids))
+    )
     if form_id:
         forms_query = forms_query.filter(Form.id == form_id)
     
@@ -121,7 +131,15 @@ def get_analytics_charts(
     6. browser_distribution
     7. question_analytics (Question-wise metrics scoped strictly to selected form)
     """
-    forms_query = db.query(Form).filter(Form.owner_id == current_user.id)
+    collabs = db.query(FormCollaborator.form_id).filter(
+        FormCollaborator.user_id == current_user.id,
+        FormCollaborator.status == "accepted"
+    ).all()
+    collaborator_form_ids = [c[0] for c in collabs]
+
+    forms_query = db.query(Form).filter(
+        (Form.owner_id == current_user.id) | (Form.id.in_(collaborator_form_ids))
+    )
     if form_id:
         forms_query = forms_query.filter(Form.id == form_id)
     
@@ -184,13 +202,11 @@ def get_analytics_charts(
         {"name": "Partial / Incomplete", "value": 0},
     ]
 
-    # 4. Question-Level Analytics strictly for selected form / active user forms
-    # Retrieve active fields from latest versions ONLY to prevent leaking old test questions
     active_field_query = (
-        db.query(Field)
+        db.query(Field, Form.id.label("form_id"), Form.title.label("form_title"))
         .join(FormVersion, Field.form_version_id == FormVersion.id)
         .join(Form, FormVersion.form_id == Form.id)
-        .filter(Form.owner_id == current_user.id)
+        .filter((Form.owner_id == current_user.id) | (Form.id.in_(collaborator_form_ids)))
     )
 
     if form_id:
@@ -218,28 +234,39 @@ def get_analytics_charts(
         if latest_v_ids:
             active_field_query = active_field_query.filter(Field.form_version_id.in_(latest_v_ids))
 
-    all_fields = active_field_query.order_by(Field.field_order, Field.id).all()
+    all_fields_with_forms = active_field_query.order_by(Form.title, Field.field_order, Field.id).all()
 
     dropoff_questions = []
     question_analytics = []
 
-    sub_ids = [s.id for s in all_submissions]
+    # Map version ID to submissions belonging to that version
+    version_subs_map = {}
+    for s in all_submissions:
+        version_subs_map.setdefault(s.form_version_id, []).append(s)
 
-    for f in all_fields:
-        if sub_ids:
-            ans_query = db.query(ResponseValue).filter(
+    for row in all_fields_with_forms:
+        f = row[0]
+        f_form_id = row[1]
+        f_form_title = row[2]
+
+        form_subs = version_subs_map.get(f.form_version_id, [])
+        form_subs_cnt = len(form_subs) if not form_id else total_subs
+        f_sub_ids = [s.id for s in form_subs] if not form_id else [s.id for s in all_submissions]
+
+        ans_values = []
+        if f_sub_ids:
+            rv_rows = db.query(ResponseValue).filter(
                 ResponseValue.field_id == f.id,
-                ResponseValue.submission_id.in_(sub_ids),
+                ResponseValue.submission_id.in_(f_sub_ids),
                 ResponseValue.value_text != "",
                 ResponseValue.value_text.isnot(None)
-            )
-            answered_cnt = ans_query.count()
-        else:
-            answered_cnt = 0
+            ).all()
+            ans_values = [rv.value_text.strip() for rv in rv_rows if rv.value_text and rv.value_text.strip()]
 
-        skipped_cnt = max(0, total_subs - answered_cnt)
-        skip_rate = round((skipped_cnt / total_subs * 100), 1) if total_subs > 0 else 0.0
-        comp_rate_pct = round((answered_cnt / total_subs * 100), 1) if total_subs > 0 else 0.0
+        answered_cnt = len(ans_values)
+        skipped_cnt = max(0, form_subs_cnt - answered_cnt)
+        skip_rate = round((skipped_cnt / form_subs_cnt * 100), 1) if form_subs_cnt > 0 else 0.0
+        comp_rate_pct = round((answered_cnt / form_subs_cnt * 100), 1) if form_subs_cnt > 0 else 0.0
 
         dropoff_questions.append({
             "question": f.label[:22] + "..." if len(f.label) > 25 else f.label,
@@ -247,16 +274,122 @@ def get_analytics_charts(
             "skipped_count": skipped_cnt
         })
 
+        # Field-Type Specific Analytics
+        distribution = []
+        rating_stats = None
+        number_stats = None
+        sample_responses = []
+
+        clean_ftype = (f.field_type or "text").lower()
+
+        # 1. Choice / Select / Radio / Checkbox
+        if clean_ftype in ["select", "dropdown", "radio", "checkbox"]:
+            options = db.query(FieldOption).filter(FieldOption.field_id == f.id).order_by(FieldOption.option_order, FieldOption.id).all()
+            opt_texts = [o.option_text for o in options]
+
+            opt_counts = {opt: 0 for opt in opt_texts}
+            other_cnt = 0
+
+            for v in ans_values:
+                matched = False
+                # If comma-separated (checkbox)
+                split_vals = [s.strip() for s in v.split(",") if s.strip()]
+                for sv in split_vals:
+                    if sv in opt_counts:
+                        opt_counts[sv] += 1
+                        matched = True
+                    else:
+                        for opt_key in opt_counts:
+                            if sv.lower() == opt_key.lower():
+                                opt_counts[opt_key] += 1
+                                matched = True
+                                break
+                if not matched:
+                    other_cnt += 1
+
+            total_choice_answers = sum(opt_counts.values()) + other_cnt
+            for opt, cnt in opt_counts.items():
+                pct = round((cnt / total_choice_answers * 100), 1) if total_choice_answers > 0 else 0.0
+                distribution.append({
+                    "label": opt,
+                    "count": cnt,
+                    "percentage": pct
+                })
+            if other_cnt > 0:
+                distribution.append({
+                    "label": "Other / Custom",
+                    "count": other_cnt,
+                    "percentage": round((other_cnt / total_choice_answers * 100), 1) if total_choice_answers > 0 else 0.0
+                })
+
+        # 2. Rating Fields
+        elif clean_ftype in ["rating", "star_rating", "scale"]:
+            rating_counts = {str(r): 0 for r in range(1, 6)}
+            rating_numeric = []
+            for v in ans_values:
+                try:
+                    num = float(v)
+                    int_key = str(min(5, max(1, int(round(num)))))
+                    rating_counts[int_key] += 1
+                    rating_numeric.append(num)
+                except ValueError:
+                    pass
+
+            avg_rating = round(sum(rating_numeric) / len(rating_numeric), 1) if rating_numeric else 0.0
+            rating_stats = {
+                "average": avg_rating,
+                "total_ratings": len(rating_numeric),
+                "breakdown": [
+                    {"score": f"{r} Star", "count": rating_counts[str(r)], "percentage": round((rating_counts[str(r)] / len(rating_numeric) * 100), 1) if rating_numeric else 0.0}
+                    for r in range(5, 0, -1)
+                ]
+            }
+
+        # 3. Number / Currency Fields
+        elif clean_ftype in ["number", "currency"]:
+            nums = []
+            for v in ans_values:
+                try:
+                    nums.append(float(v.replace("$", "").replace(",", "")))
+                except ValueError:
+                    pass
+            if nums:
+                number_stats = {
+                    "average": round(sum(nums) / len(nums), 2),
+                    "min": min(nums),
+                    "max": max(nums),
+                    "total_count": len(nums)
+                }
+
+        # 4. Text / Contact / Lookup / Date / File
+        else:
+            # Gather unique sample responses
+            seen = set()
+            for v in ans_values:
+                if v and v not in seen:
+                    seen.add(v)
+                    sample_responses.append(v)
+                    if len(sample_responses) >= 8:
+                        break
+
         question_analytics.append({
             "id": f.id,
             "label": f.label,
-            "field_type": f.field_type,
+            "field_type": clean_ftype,
+            "is_required": bool(f.is_required),
+            "form_id": f_form_id,
+            "form_title": f_form_title,
             "responses_count": answered_cnt,
-            "total_submissions": total_subs,
-            "answered_ratio": f"{answered_cnt} / {total_subs} answered" if total_subs > 0 else "0 / 0 answered",
-            "completion_rate": f"{comp_rate_pct}%" if total_subs > 0 else "No response data yet",
+            "unanswered_count": skipped_cnt,
+            "total_submissions": form_subs_cnt,
+            "answered_ratio": f"{answered_cnt} / {form_subs_cnt} answered" if form_subs_cnt > 0 else "0 / 0 answered",
+            "completion_rate": f"{comp_rate_pct}%" if form_subs_cnt > 0 else "No response data yet",
             "completion_pct": comp_rate_pct,
-            "has_data": total_subs > 0,
+            "has_data": form_subs_cnt > 0,
+            "distribution": distribution,
+            "rating_stats": rating_stats,
+            "number_stats": number_stats,
+            "sample_responses": sample_responses,
         })
 
     dropoff_questions = sorted(dropoff_questions, key=lambda x: x["dropoff_rate"], reverse=True)[:5]

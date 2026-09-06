@@ -22,6 +22,7 @@ import InboxRoundedIcon from "@mui/icons-material/InboxRounded";
 import SecurityRoundedIcon from "@mui/icons-material/SecurityRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
 import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
+import AIAssistantWidget from "../../components/common/AIAssistantWidget";
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -83,10 +84,10 @@ export default function LandingPage() {
                 src="/formify-logo.jpg"
                 alt="Formify Logo"
                 sx={{
-                  height: 38,
+                  height: 40,
                   width: "auto",
+                  objectFit: "contain",
                   borderRadius: 1.2,
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
                 }}
               />
               <Typography
@@ -718,8 +719,9 @@ export default function LandingPage() {
                 src="/formify-logo.jpg"
                 alt="Formify Logo"
                 sx={{
-                  height: 26,
+                  height: 32,
                   width: "auto",
+                  objectFit: "contain",
                   borderRadius: 0.6,
                 }}
               />
@@ -743,6 +745,7 @@ export default function LandingPage() {
           </Box>
         </Container>
       </Box>
+      <AIAssistantWidget />
     </Box>
   );
 }

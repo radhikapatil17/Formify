@@ -35,6 +35,8 @@ def create_version(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_form_access
+    verify_form_access(db, current_user.id, version.form_id, required_role="editor")
     return create_new_version(version, db)
 
 
@@ -44,8 +46,11 @@ def create_version(
 )
 def read_versions(
     form_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_form_access
+    verify_form_access(db, current_user.id, form_id, required_role="viewer")
     return get_versions(
         form_id,
         db
@@ -58,8 +63,11 @@ def read_versions(
 )
 def read_version(
     version_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, version_id, required_role="viewer")
     return get_single_version(
         version_id,
         db
@@ -76,6 +84,8 @@ def update_version_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, version_id, required_role="editor")
     return edit_version(
         version_id,
         version,
@@ -91,6 +101,8 @@ def delete_version_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, version_id, required_role="editor")
     return remove_version(
         version_id,
         db

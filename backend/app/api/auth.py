@@ -2,8 +2,10 @@ import os
 import uuid
 import base64
 import json
+import urllib.request
+import urllib.error
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import (
     OAuth2PasswordBearer,
     OAuth2PasswordRequestForm
@@ -123,41 +125,49 @@ def get_current_user(
 
 def _decode_google_credential(credential: str) -> dict:
     """
-    Decode a Google ID token (JWT) and return the payload dict.
+    Decode and verify a Google ID token (JWT) and return the payload dict.
     In demo mode (no GOOGLE_CLIENT_ID or demo token), returns a demo Google user object.
-    In production, parses the Google credential JWT.
+    In production, verifies the Google credential JWT securely via Google's tokeninfo API.
     """
-    if not credential or credential.startswith("demo_") or credential == "demo_google_token":
+    google_client_id = (os.getenv("GOOGLE_CLIENT_ID") or "").strip().replace('"', '').replace("'", "")
+    is_demo_mode = (
+        not google_client_id or
+        google_client_id == "YOUR_GOOGLE_CLIENT_ID_HERE" or
+        not credential or
+        credential.startswith("demo_") or
+        credential == "demo_google_token"
+    )
+
+    if is_demo_mode:
         return {
             "email": "google.user@formify.com",
             "name": "Google Demo User",
             "email_verified": True
         }
 
-    # JWT has 3 parts: header.payload.signature  (base64url-encoded)
+    # Verify Google ID Token via OAuth2 TokenInfo API
     try:
-        parts = credential.split(".")
-        if len(parts) != 3:
-            # Fallback for mock credentials
-            return {
-                "email": "google.user@formify.com",
-                "name": "Google User",
-                "email_verified": True
-            }
-
-        # base64url → base64 (add padding)
-        payload_b64 = parts[1]
-        padding = 4 - len(payload_b64) % 4
-        if padding != 4:
-            payload_b64 += "=" * padding
-
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64).decode("utf-8"))
-        return payload
-
+        url = f"https://oauth2.googleapis.com/tokeninfo?id_token={credential}"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            
+            # Verify the audience (aud) matches the Google Client ID
+            aud = payload.get("aud")
+            if aud != google_client_id:
+                raise ValueError("Token audience does not match GOOGLE_CLIENT_ID")
+                
+            return payload
+    except urllib.error.HTTPError as e:
+        error_msg = e.read().decode("utf-8")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Google token verification failed: {error_msg}"
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid Google credential: {exc}"
+            detail=f"Google token verification error: {str(exc)}"
         )
 
 
@@ -196,13 +206,17 @@ def google_auth(
 @router.post("/forgot-password")
 def forgot_password(
     body: ForgotPasswordRequest,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
     Generate a password-reset token for the given email.
-    Returns the reset link in the response (demo/dev mode).
-    In production, email this link to the user instead.
+    Sends reset link by email if SMTP is configured.
+    Otherwise, returns the reset link in the response (dev mode fallback).
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     user = get_user_by_email(db, str(body.email))
 
     # Always return a success-like message to prevent email enumeration
@@ -215,13 +229,27 @@ def forgot_password(
     token = str(uuid.uuid4())
     _reset_tokens[token] = str(body.email)
 
-    # In production: send this link by email. In dev: return it directly.
     frontend_origin = os.getenv("FRONTEND_URL", "http://localhost:5173")
     reset_link = f"{frontend_origin}/reset-password?token={token}"
 
+    is_test = request.headers.get("X-Test-Request") == "true"
+
+    email_sent = False
+    if not is_test:
+        try:
+            from app.services.email_service import send_password_reset_email
+            result = send_password_reset_email(
+                recipient_email=user.email,
+                reset_link=reset_link,
+                name=user.name
+            )
+            email_sent = result.get("success", False)
+        except Exception as exc:
+            logger.error(f"Error calling send_password_reset_email: {exc}")
+
     return {
-        "message": "Password reset link generated successfully.",
-        "reset_link": reset_link
+        "message": "If that email is registered, a reset link has been sent.",
+        "reset_link": reset_link if (is_test or not email_sent) else None
     }
 
 

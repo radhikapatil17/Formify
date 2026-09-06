@@ -24,6 +24,8 @@ from app.models.field import Field
 from app.models.submission import Submission
 from app.models.response_value import ResponseValue
 
+from app.models.form_collaborator import FormCollaborator
+
 router = APIRouter(
     prefix="/submissions",
     tags=["Submissions"]
@@ -38,8 +40,17 @@ def get_user_submissions_api(
 ):
     """
     Returns user-scoped submissions list with form details and question answers.
+    Includes forms owned or collaborated on.
     """
-    forms_query = db.query(Form).filter(Form.owner_id == current_user.id)
+    collabs = db.query(FormCollaborator.form_id).filter(
+        FormCollaborator.user_id == current_user.id,
+        FormCollaborator.status == "accepted"
+    ).all()
+    collaborator_form_ids = [c[0] for c in collabs]
+
+    forms_query = db.query(Form).filter(
+        (Form.owner_id == current_user.id) | (Form.id.in_(collaborator_form_ids))
+    )
     if form_id:
         forms_query = forms_query.filter(Form.id == form_id)
 
@@ -130,6 +141,8 @@ def read_submissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, form_version_id, required_role="viewer")
     return get_all_submissions(form_version_id, db)
 
 
@@ -142,6 +155,8 @@ def read_submission(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_submission_access
+    verify_submission_access(db, current_user.id, submission_id, required_role="viewer")
     return get_single_submission(submission_id, db)
 
 
@@ -153,4 +168,6 @@ def delete_submission_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_submission_access
+    verify_submission_access(db, current_user.id, submission_id, required_role="editor")
     return remove_submission(submission_id, db)

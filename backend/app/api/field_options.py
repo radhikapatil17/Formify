@@ -35,6 +35,8 @@ def create_field_option(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_field_access
+    verify_field_access(db, current_user.id, option.field_id, required_role="editor")
     return create_new_option(option, db)
 
 
@@ -44,8 +46,11 @@ def create_field_option(
 )
 def read_field_options(
     field_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_field_access
+    verify_field_access(db, current_user.id, field_id, required_role="viewer")
     return get_options(field_id, db)
 
 
@@ -55,8 +60,11 @@ def read_field_options(
 )
 def read_field_option(
     option_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_option_access
+    verify_option_access(db, current_user.id, option_id, required_role="viewer")
     return get_single_option(option_id, db)
 
 
@@ -70,6 +78,8 @@ def update_field_option(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_option_access
+    verify_option_access(db, current_user.id, option_id, required_role="editor")
     return edit_option(option_id, option, db)
 
 
@@ -81,4 +91,6 @@ def delete_field_option(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_option_access
+    verify_option_access(db, current_user.id, option_id, required_role="editor")
     return remove_option(option_id, db)

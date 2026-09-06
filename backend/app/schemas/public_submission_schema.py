@@ -8,6 +8,9 @@ class ResponseItem(BaseModel):
 
 
 class PublicSubmissionCreate(BaseModel):
+    client_id: Optional[str] = None
+    resume_token: Optional[str] = None
+    verification_tokens: Optional[list[str]] = []
     responses: list[ResponseItem]
 
 

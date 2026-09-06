@@ -54,6 +54,24 @@ def _apply_field_data(field: Field, data):
     field.max_file_size_mb = data.max_file_size_mb
     field.max_files = data.max_files
 
+    # Formula / Calculation
+    if hasattr(data, "formula_expression"):
+        field.formula_expression = data.formula_expression
+    if hasattr(data, "decimal_places"):
+        field.decimal_places = data.decimal_places
+    if hasattr(data, "number_prefix"):
+        field.number_prefix = data.number_prefix
+    if hasattr(data, "number_suffix"):
+        field.number_suffix = data.number_suffix
+
+    # Dynamic API Lookup
+    if hasattr(data, "lookup_config"):
+        cfg = data.lookup_config
+        if isinstance(cfg, (dict, list)):
+            import json
+            cfg = json.dumps(cfg)
+        field.lookup_config = cfg
+
 
 def create_new_field(field: FieldCreate, db: Session):
     new_field = Field(form_version_id=field.form_version_id)

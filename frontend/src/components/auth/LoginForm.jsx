@@ -24,7 +24,8 @@ import GoogleIcon from "@mui/icons-material/Google";
 
 import api from "../../api/api";
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const rawClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").replace(/['"]/g, "").trim();
+const GOOGLE_CLIENT_ID = rawClientId;
 const IS_REAL_GOOGLE_CONFIGURED =
   GOOGLE_CLIENT_ID &&
   GOOGLE_CLIENT_ID !== "YOUR_GOOGLE_CLIENT_ID_HERE" &&
@@ -54,7 +55,15 @@ export default function LoginForm() {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
 
-      localStorage.setItem("token", response.data.access_token);
+      const token = response.data.access_token;
+      localStorage.setItem("token", token);
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const name = payload.name || payload.sub?.split("@")[0] || "User";
+        localStorage.setItem("user_name", name);
+      } catch (e) {
+        console.error("Failed to parse token name", e);
+      }
       toast.success("Welcome back to Formify!");
 
       setTimeout(() => navigate("/dashboard"), 400);
@@ -71,7 +80,15 @@ export default function LoginForm() {
       const response = await api.post("/auth/google", {
         credential: credentialResponse.credential,
       });
-      localStorage.setItem("token", response.data.access_token);
+      const token = response.data.access_token;
+      localStorage.setItem("token", token);
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const name = payload.name || payload.sub?.split("@")[0] || "User";
+        localStorage.setItem("user_name", name);
+      } catch (e) {
+        console.error("Failed to parse token name", e);
+      }
       toast.success("Signed in with Google!");
       setTimeout(() => navigate("/dashboard"), 400);
     } catch (err) {
@@ -87,7 +104,15 @@ export default function LoginForm() {
       const response = await api.post("/auth/google", {
         credential: "demo_google_token",
       });
-      localStorage.setItem("token", response.data.access_token);
+      const token = response.data.access_token;
+      localStorage.setItem("token", token);
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const name = payload.name || payload.sub?.split("@")[0] || "User";
+        localStorage.setItem("user_name", name);
+      } catch (e) {
+        console.error("Failed to parse token name", e);
+      }
       toast.success("Signed in with Google!");
       setTimeout(() => navigate("/dashboard"), 400);
     } catch (err) {
@@ -106,11 +131,11 @@ export default function LoginForm() {
           src="/formify-logo.jpg"
           alt="Formify Logo"
           sx={{
-            height: 44,
+            height: 52,
             width: "auto",
+            objectFit: "contain",
             borderRadius: 1.2,
             mb: 1.8,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
           }}
         />
         <Typography
@@ -279,20 +304,44 @@ export default function LoginForm() {
               endAdornment: (
                 <InputAdornment position="end">
                   <IconButton
-                    onClick={() => setShowPassword(!showPassword)}
+                    onClick={() => setShowPassword((prev) => !prev)}
                     edge="end"
                     size="small"
+                    aria-label="toggle password visibility"
+                    sx={{ color: "#64748B", "&:hover": { color: "#4F46E5" } }}
                   >
                     {showPassword ? (
-                      <VisibilityOffRoundedIcon sx={{ fontSize: 16 }} />
+                      <VisibilityOffRoundedIcon sx={{ fontSize: 18 }} />
                     ) : (
-                      <VisibilityRoundedIcon sx={{ fontSize: 16 }} />
+                      <VisibilityRoundedIcon sx={{ fontSize: 18 }} />
                     )}
                   </IconButton>
                 </InputAdornment>
               ),
             }}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      edge="end"
+                      size="small"
+                      aria-label="toggle password visibility"
+                      sx={{ color: "#64748B", "&:hover": { color: "#4F46E5" } }}
+                    >
+                      {showPassword ? (
+                        <VisibilityOffRoundedIcon sx={{ fontSize: 18 }} />
+                      ) : (
+                        <VisibilityRoundedIcon sx={{ fontSize: 18 }} />
+                      )}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
+
         </Box>
 
         <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
@@ -333,7 +382,7 @@ export default function LoginForm() {
             component={Link}
             to="/register"
             sx={{
-              color: "secondary.main",
+              color: "primary.main",
               fontWeight: 600,
               textDecoration: "none",
               "&:hover": { textDecoration: "underline" },

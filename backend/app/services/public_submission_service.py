@@ -53,6 +53,26 @@ def submit_public_form(
                 detail=limit_eval["message"] or "This form has reached its maximum response limit and is no longer accepting responses."
             )
 
+        # Validate Micro-Verification Gate if required
+        if form.require_verification_to_submit:
+            tokens = submission_data.verification_tokens or []
+            from app.models.form_verification import FormVerification
+            valid_count = (
+                db.query(FormVerification)
+                .filter(
+                    FormVerification.form_id == form.id,
+                    FormVerification.session_token.in_(tokens),
+                    FormVerification.is_verified == True
+                )
+                .count()
+            ) if tokens else 0
+
+            if valid_count == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Form submission blocked. Email or Phone verification is required before submitting."
+                )
+
     # Extract respondent identifier if email or name field is present
     respondent_ident = None
     if submission_data.responses:
@@ -67,9 +87,30 @@ def submit_public_form(
                     respondent_ident = resp.value
                     break
 
+    if submission_data.client_id:
+        existing = db.query(Submission).filter(
+            Submission.form_version_id == version.id,
+            Submission.client_id == submission_data.client_id
+        ).first()
+        if existing:
+            if submission_data.resume_token:
+                from app.models.form_draft import FormDraft
+                draft = db.query(FormDraft).filter(
+                    FormDraft.public_link == public_link,
+                    FormDraft.resume_token == submission_data.resume_token
+                ).first()
+                if draft:
+                    draft.is_submitted = True
+                    db.commit()
+            return {
+                "message": "Form submitted successfully (already synced)",
+                "submission_id": existing.id
+            }
+
     submission = Submission(
         form_version_id=version.id,
         respondent_identifier=respondent_ident or "Anonymous Respondent",
+        client_id=submission_data.client_id,
         status="submitted"
     )
 
@@ -98,15 +139,16 @@ def submit_public_form(
     if target_form:
         target_user_id = target_form.owner_id
 
-    # Dispatch notification for new response
-    notif = Notification(
-        user_id=target_user_id,
-        title="New Response Collected",
-        message=f"A new submission (SUB-{submission.id}) was recorded for form '{target_form.title if target_form else 'Published Form'}'.",
-        type="response"
-    )
-    db.add(notif)
-    db.commit()
+    # Archive draft if resume_token was provided
+    if submission_data.resume_token:
+        from app.models.form_draft import FormDraft
+        draft = db.query(FormDraft).filter(
+            FormDraft.public_link == public_link,
+            FormDraft.resume_token == submission_data.resume_token
+        ).first()
+        if draft:
+            draft.is_submitted = True
+            db.commit()
 
     return {
         "message": "Form submitted successfully",

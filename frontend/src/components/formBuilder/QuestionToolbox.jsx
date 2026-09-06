@@ -47,6 +47,7 @@ import DragIndicatorRoundedIcon from "@mui/icons-material/DragIndicatorRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import GridViewOutlinedIcon from "@mui/icons-material/GridViewOutlined";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import CalculateRoundedIcon from "@mui/icons-material/CalculateRounded";
 
 // ─── Categories Definition (Basic, Choice, Rating, Advanced) ─────────────────────
 const CATEGORIES = [
@@ -96,6 +97,8 @@ const CATEGORIES = [
     color: "#8B5CF6",
     bgColor: "#F5F3FF",
     fields: [
+      { type: "formula",         label: "Formula / Math",  icon: CalculateRoundedIcon, common: true },
+      { type: "lookup",          label: "API Lookup",      icon: SearchRoundedIcon, common: true },
       { type: "file_upload",     label: "File Upload",     icon: AttachFileOutlinedIcon, common: true },
       { type: "image_upload",    label: "Image Upload",    icon: PhotoCameraBackRoundedIcon },
       { type: "signature",       label: "Signature",       icon: DrawRoundedIcon },

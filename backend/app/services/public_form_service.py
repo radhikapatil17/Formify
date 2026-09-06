@@ -10,8 +10,30 @@ from app.repositories.conditional_rule_repository import get_rules_by_version
 from app.models.submission import Submission
 from app.models.form_version import FormVersion
 
+from app.core.security import verify_password
 
 from datetime import datetime, timezone
+import json
+
+def sanitize_public_lookup_config(raw_config):
+    """Sanitize lookup_config for public respondents so credentials and internal headers are never leaked."""
+    if not raw_config:
+        return None
+    try:
+        data = json.loads(raw_config) if isinstance(raw_config, str) else raw_config
+        if not isinstance(data, dict):
+            return None
+        # Only expose safe configuration needed by respondent frontend to trigger proxy
+        return json.dumps({
+            "is_enabled": data.get("is_enabled", True),
+            "trigger_field_id": data.get("trigger_field_id"),
+            "trigger_behavior": data.get("trigger_behavior", "on_change"),
+            "min_chars": data.get("min_chars", 3),
+            "response_mappings": data.get("response_mappings", []),
+            "button_label": data.get("button_label", "Lookup"),
+        })
+    except Exception:
+        return None
 
 def evaluate_form_schedule(form):
     if not form or not getattr(form, "is_scheduling_enabled", False):
@@ -108,38 +130,14 @@ def evaluate_response_limit(form, db: Session):
     }
 
 
-def get_public_form(
-    public_link: str,
-    db: Session
-):
-    version = get_published_form(
-        public_link,
-        db
-    )
-
-    if not version:
-        raise HTTPException(
-            status_code=404,
-            detail="Published form not found"
-        )
-
-    form = get_form_by_id(
-        db,
-        version.form_id
-    )
-
-    fields = get_fields_by_version(
-        db,
-        version.id
-    )
+def _build_full_public_form_data(form, version, db: Session) -> dict:
+    """Build the complete public form data dict (fields, rules, schedule, limit)."""
+    fields = get_fields_by_version(db, version.id)
 
     field_list = []
 
     for field in fields:
-        options = get_options_by_field(
-            db,
-            field.id
-        )
+        options = get_options_by_field(db, field.id)
 
         field_list.append({
             "id": field.id,
@@ -172,13 +170,17 @@ def get_public_form(
             "allowed_file_types": field.allowed_file_types,
             "max_file_size_mb": field.max_file_size_mb,
             "max_files": field.max_files or 1,
+            # Formula / Calculation
+            "formula_expression": getattr(field, "formula_expression", None),
+            "decimal_places": getattr(field, "decimal_places", None),
+            "number_prefix": getattr(field, "number_prefix", None),
+            "number_suffix": getattr(field, "number_suffix", None),
+            # Dynamic API Lookup
+            "lookup_config": sanitize_public_lookup_config(getattr(field, "lookup_config", None)),
             "options": options,
         })
 
-    rules = get_rules_by_version(
-        db,
-        version.id
-    )
+    rules = get_rules_by_version(db, version.id)
 
     schedule_status = evaluate_form_schedule(form)
     response_limit_status = evaluate_response_limit(form, db)
@@ -191,5 +193,79 @@ def get_public_form(
         "fields": field_list,
         "conditional_rules": rules,
         "schedule_status": schedule_status,
-        "response_limit_status": response_limit_status
+        "response_limit_status": response_limit_status,
+        "is_password_protected": getattr(form, "is_password_protected", False) or False,
+        "is_email_otp_enabled": getattr(form, "is_email_otp_enabled", False) or False,
+        "is_phone_otp_enabled": getattr(form, "is_phone_otp_enabled", False) or False,
+        "otp_expiry_minutes": getattr(form, "otp_expiry_minutes", 10) or 10,
+        "max_otp_attempts": getattr(form, "max_otp_attempts", 3) or 3,
+        "otp_cooldown_seconds": getattr(form, "otp_cooldown_seconds", 60) or 60,
+        "require_verification_to_submit": getattr(form, "require_verification_to_submit", False) or False,
     }
+
+
+def get_public_form(
+    public_link: str,
+    db: Session
+):
+    version = get_published_form(public_link, db)
+
+    if not version:
+        raise HTTPException(
+            status_code=404,
+            detail="Published form not found"
+        )
+
+    form = get_form_by_id(db, version.form_id)
+
+    # If password protected, return a locked shell — no fields, no rules
+    # The frontend must call verify-password to unlock full data
+    if getattr(form, "is_password_protected", False):
+        return {
+            "title": form.title,
+            "description": form.description,
+            "public_link": version.public_link,
+            "theme_config": getattr(form, "theme_config", None),
+            "fields": [],
+            "conditional_rules": [],
+            "schedule_status": None,
+            "response_limit_status": None,
+            "is_password_protected": True,
+        }
+
+    return _build_full_public_form_data(form, version, db)
+
+
+def verify_form_password(
+    public_link: str,
+    plain_password: str,
+    db: Session
+):
+    """Verify the visitor-supplied password for a protected form.
+
+    Returns full form data on success, raises 401 on mismatch.
+    The password_hash is never included in the returned data.
+    """
+    version = get_published_form(public_link, db)
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Published form not found")
+
+    form = get_form_by_id(db, version.form_id)
+
+    if not getattr(form, "is_password_protected", False):
+        # Form is not protected — just return full data
+        return _build_full_public_form_data(form, version, db)
+
+    stored_hash = getattr(form, "password_hash", None)
+    if not stored_hash:
+        # Protection enabled but no hash set — treat as unlocked (misconfiguration fallback)
+        return _build_full_public_form_data(form, version, db)
+
+    if not verify_password(plain_password, stored_hash):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect password. Please try again."
+        )
+
+    return _build_full_public_form_data(form, version, db)

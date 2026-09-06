@@ -53,6 +53,7 @@ import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import UpdateRoundedIcon from "@mui/icons-material/UpdateRounded";
 
 import api from "../../api/api";
+import PageHeader from "../../components/common/PageHeader";
 
 export default function Forms() {
   const navigate = useNavigate();
@@ -282,58 +283,36 @@ export default function Forms() {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3.5, pb: 4 }}>
-      {/* ─────────────────────────────────────────────────────────────
-          1. HEADER SECTION
-         ───────────────────────────────────────────────────────────── */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
-        <Box>
-          <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: "-0.03em", color: "#0F172A" }}>
-            Forms Portfolio
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3, color: "#64748B" }}>
-            Design, publish, archive, and manage your dynamic forms
-          </Typography>
-        </Box>
+      <PageHeader
+        title="My Forms"
+        subtitle="Design, publish, archive, and manage your dynamic forms"
+        actions={
+          <Stack direction="row" spacing={1.5}>
+            <Button
+              variant={isSelectMode ? "contained" : "outlined"}
+              color={isSelectMode ? "error" : "inherit"}
+              startIcon={<DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => {
+                setIsSelectMode((prev) => !prev);
+                if (isSelectMode) setSelectedFormIds([]);
+              }}
+              sx={{ fontWeight: 600, fontSize: "0.85rem" }}
+            >
+              {isSelectMode ? "Done" : "Select"}
+            </Button>
 
-        <Stack direction="row" spacing={1.5}>
-          <Button
-            variant={isSelectMode ? "contained" : "outlined"}
-            color={isSelectMode ? "secondary" : "inherit"}
-            startIcon={<DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} />}
-            onClick={() => {
-              setIsSelectMode((prev) => !prev);
-              if (isSelectMode) setSelectedFormIds([]);
-            }}
-            sx={{
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              px: 2,
-              py: 0.9,
-              borderRadius: 2,
-              borderColor: "divider",
-            }}
-          >
-            {isSelectMode ? "Done Selecting" : "Select Forms to Delete"}
-          </Button>
-
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddRoundedIcon sx={{ fontSize: 18 }} />}
-            onClick={() => setOpenCreate(true)}
-            sx={{
-              fontWeight: 600,
-              fontSize: "0.85rem",
-              px: 2.5,
-              py: 0.9,
-              borderRadius: 2,
-              boxShadow: "0 4px 14px rgba(15, 23, 42, 0.15)",
-            }}
-          >
-            Create Form
-          </Button>
-        </Stack>
-      </Box>
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<AddRoundedIcon sx={{ fontSize: 18 }} />}
+              onClick={() => setOpenCreate(true)}
+              sx={{ fontWeight: 600, fontSize: "0.85rem" }}
+            >
+              Create Form
+            </Button>
+          </Stack>
+        }
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           2. SEARCH, FILTER & SORT CONTROLS BAR
@@ -620,6 +599,20 @@ export default function Forms() {
                               bgcolor: (form.submissions_count ?? 0) >= form.max_response_limit ? "#FEF2F2" : "#FFF7ED",
                               color: (form.submissions_count ?? 0) >= form.max_response_limit ? "#EF4444" : "#D97706",
                               border: `1px solid ${(form.submissions_count ?? 0) >= form.max_response_limit ? "#FECACA" : "#FDE68A"}`,
+                            }}
+                          />
+                        )}
+                        {form.user_role && form.user_role !== "owner" && (
+                          <Chip
+                            label={`Shared (${form.user_role})`}
+                            size="small"
+                            sx={{
+                              fontSize: "0.675rem",
+                              fontWeight: 700,
+                              height: 22,
+                              bgcolor: "#F3E8FF",
+                              color: "#7E22CE",
+                              border: "1px solid #E9D5FF",
                             }}
                           />
                         )}

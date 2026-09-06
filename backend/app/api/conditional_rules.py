@@ -17,6 +17,9 @@ from app.services.conditional_rule_service import (
     remove_rule
 )
 
+from app.api.auth import get_current_user
+from app.models.user import User
+
 router = APIRouter(
     prefix="/conditional-rules",
     tags=["Conditional Rules"]
@@ -29,8 +32,11 @@ router = APIRouter(
 )
 def create_conditional_rule(
     rule: ConditionalRuleCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, rule.form_version_id, required_role="editor")
     return create_new_rule(rule, db)
 
 
@@ -40,8 +46,11 @@ def create_conditional_rule(
 )
 def read_conditional_rules(
     form_version_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_version_access
+    verify_version_access(db, current_user.id, form_version_id, required_role="viewer")
     return get_rules(form_version_id, db)
 
 
@@ -51,8 +60,11 @@ def read_conditional_rules(
 )
 def read_conditional_rule(
     rule_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_rule_access
+    verify_rule_access(db, current_user.id, rule_id, required_role="viewer")
     return get_single_rule(rule_id, db)
 
 
@@ -63,8 +75,11 @@ def read_conditional_rule(
 def update_conditional_rule(
     rule_id: int,
     rule: ConditionalRuleUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_rule_access
+    verify_rule_access(db, current_user.id, rule_id, required_role="editor")
     return edit_rule(rule_id, rule, db)
 
 
@@ -73,6 +88,9 @@ def update_conditional_rule(
 )
 def delete_conditional_rule(
     rule_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    from app.core.permissions import verify_rule_access
+    verify_rule_access(db, current_user.id, rule_id, required_role="editor")
     return remove_rule(rule_id, db)

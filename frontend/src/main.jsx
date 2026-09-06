@@ -10,10 +10,10 @@ import ErrorBoundary from "./components/common/ErrorBoundary";
 
 import "./index.css";
 
+const rawClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").replace(/['"]/g, "").trim();
 const GOOGLE_CLIENT_ID =
-  import.meta.env.VITE_GOOGLE_CLIENT_ID &&
-  import.meta.env.VITE_GOOGLE_CLIENT_ID !== "YOUR_GOOGLE_CLIENT_ID_HERE"
-    ? import.meta.env.VITE_GOOGLE_CLIENT_ID
+  rawClientId && rawClientId !== "YOUR_GOOGLE_CLIENT_ID_HERE"
+    ? rawClientId
     : "1234567890-demo.apps.googleusercontent.com";
 
 ReactDOM.createRoot(document.getElementById("root")).render(

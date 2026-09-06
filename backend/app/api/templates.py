@@ -185,6 +185,7 @@ def seed_templates_if_empty(db: Session):
 def get_templates(
     category: str | None = None,
     q: str | None = None,
+    scope: str | None = None,
     owner_only: bool = False,
     archived: bool = False,
     db: Session = Depends(get_db),
@@ -193,7 +194,9 @@ def get_templates(
     seed_templates_if_empty(db)
     query = db.query(TemplateModel)
 
-    if owner_only:
+    if scope == "official":
+        query = query.filter(TemplateModel.owner_id.is_(None), TemplateModel.is_public == True)
+    elif scope == "custom" or owner_only:
         query = query.filter(TemplateModel.owner_id == current_user.id)
     else:
         query = query.filter(
@@ -205,7 +208,7 @@ def get_templates(
     else:
         query = query.filter(TemplateModel.is_archived == False)
 
-    if category and category not in ["All", "Favorites", "My Templates"]:
+    if category and category not in ["All", "Favorites", "My Templates", "Official"]:
         query = query.filter(TemplateModel.category.ilike(f"%{category}%"))
 
     if q and q.strip():
@@ -401,28 +404,83 @@ def use_template(
 
     # Populate Fields & Field Options
     schema_questions = tmpl.template_schema if isinstance(tmpl.template_schema, list) else tmpl.template_schema.get("questions", [])
+    
+    label_to_id = {}
     for idx, q in enumerate(schema_questions):
+        label = q.get("field_label") or q.get("label") or f"Question {idx+1}"
         f = Field(
             form_version_id=new_version.id,
-            label=q.get("field_label") or q.get("label") or f"Question {idx+1}",
+            label=label,
             field_type=q.get("field_type", "text"),
             placeholder=q.get("placeholder", ""),
             is_required=q.get("is_required", False),
-            field_order=idx + 1
+            field_order=idx + 1,
+            # Populate advanced field configurations if present
+            help_text=q.get("help_text"),
+            description=q.get("description"),
+            is_read_only=q.get("is_read_only", False),
+            is_hidden=q.get("is_hidden", False),
+            default_value=q.get("default_value"),
+            width=q.get("width", "full"),
+            label_position=q.get("label_position", "top"),
+            show_placeholder=q.get("show_placeholder", True),
+            min_length=q.get("min_length"),
+            max_length=q.get("max_length"),
+            regex_pattern=q.get("regex_pattern"),
+            validation_message=q.get("validation_message"),
+            shuffle_options=q.get("shuffle_options", False),
+            allow_other=q.get("allow_other", False),
+            allow_multiple=q.get("allow_multiple", False),
+            max_selections=q.get("max_selections"),
+            allowed_file_types=q.get("allowed_file_types"),
+            max_file_size_mb=q.get("max_file_size_mb"),
+            max_files=q.get("max_files", 1)
         )
         db.add(f)
         db.commit()
         db.refresh(f)
+        
+        # Build mapping for trigger/target fields
+        label_to_id[label.lower().strip()] = f.id
 
         if "options" in q and isinstance(q["options"], list):
             for o_idx, opt_text in enumerate(q["options"]):
                 opt = FieldOption(
                     field_id=f.id,
-                    option_text=str(opt_text)
+                    option_text=str(opt_text),
+                    option_order=o_idx
                 )
                 db.add(opt)
 
     db.commit()
+
+    # Populate Conditional Logic Rules
+    conditional_rules = []
+    if isinstance(tmpl.template_schema, dict):
+        conditional_rules = tmpl.template_schema.get("conditional_logic", []) or tmpl.template_schema.get("conditional_rules", [])
+
+    if conditional_rules:
+        from app.models.conditional_rule import ConditionalRule
+        for r in conditional_rules:
+            trigger_label = r.get("trigger_field") or r.get("trigger_field_label")
+            target_label = r.get("target_field") or r.get("target_field_label")
+            
+            trigger_id = label_to_id.get(trigger_label.lower().strip()) if trigger_label else None
+            target_id = label_to_id.get(target_label.lower().strip()) if target_label else None
+            
+            if target_id:
+                rule_obj = ConditionalRule(
+                    form_version_id=new_version.id,
+                    trigger_field_id=trigger_id,
+                    operator=r.get("operator", "equals"),
+                    comparison_value=r.get("comparison_value") or r.get("value") or "",
+                    target_field_id=target_id,
+                    action=r.get("action", "show"),
+                    logic_operator=r.get("logic_operator", "AND"),
+                    rule_order=r.get("rule_order", 0)
+                )
+                db.add(rule_obj)
+        db.commit()
 
     return {
         "message": f"Form created from template '{tmpl.title}'",
@@ -549,44 +607,16 @@ def ai_generate_template(
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt is required")
 
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    generated_schema = None
-
-    if gemini_key:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
-            sys_prompt = "Generate a JSON form schema with keys 'title', 'description', 'category', 'questions'."
-            payload = {"contents": [{"role": "user", "parts": [{"text": f"{sys_prompt}\nPrompt: {req.prompt}"}]}]}
-            request_obj = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(request_obj, timeout=10) as resp:
-                d = json.loads(resp.read().decode("utf-8"))
-                t = d["candidates"][0]["content"]["parts"][0]["text"].replace("```json", "").replace("```", "").strip()
-                generated_schema = json.loads(t)
-        except Exception as e:
-            print("Gemini AI API exception:", e)
-
-    if not generated_schema:
-        # AI Schema Synthesizer
-        generated_schema = {
-            "title": f"Smart {req.prompt.title()} Schema",
-            "description": f"AI-generated schema synthesized for '{req.prompt}'.",
-            "category": req.category or "Feedback",
-            "questions": [
-                {"field_label": "Respondent Full Name", "field_type": "text", "is_required": True},
-                {"field_label": "Primary Email Address", "field_type": "email", "is_required": True},
-                {"field_label": "Satisfaction Rating", "field_type": "rating", "is_required": True},
-                {"field_label": "Service Category", "field_type": "select", "is_required": True, "options": ["Service A", "Service B", "Service C"]},
-                {"field_label": "Detailed Comments", "field_type": "textarea", "is_required": False}
-            ]
-        }
+    from app.api.ai_generator import call_gemini_api
+    generated_schema = call_gemini_api(req.prompt.strip())
 
     tmpl = TemplateModel(
         title=generated_schema.get("title", f"AI {req.prompt.title()}"),
         description=generated_schema.get("description", "AI synthesized form schema"),
         category=generated_schema.get("category", "Feedback"),
         tags=["ai-generated", "smart-schema"],
-        template_schema=generated_schema.get("questions", []),
-        created_by="Gemini AI",
+        template_schema=generated_schema,
+        created_by="Formify AI",
         owner_id=current_user.id,
         is_public=False,
         is_ai_generated=True,

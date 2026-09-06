@@ -32,6 +32,15 @@ import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlin
 import ListAltRoundedIcon from "@mui/icons-material/ListAltRounded";
 import FileUploadRoundedIcon from "@mui/icons-material/FileUploadRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
+import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
+import FileCopyRoundedIcon from "@mui/icons-material/FileCopyRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import CalculateRoundedIcon from "@mui/icons-material/CalculateRounded";
+import FunctionsRoundedIcon from "@mui/icons-material/FunctionsRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import FormulaBuilderDialog from "./FormulaBuilderDialog";
+import LookupConfigDialog from "./LookupConfigDialog";
 
 // ─── Field types that show the Options tab ────────────────────────────────────
 const CHOICE_TYPES = ["select", "dropdown", "radio", "checkbox", "yes_no", "matrix"];
@@ -169,16 +178,19 @@ export default function QuestionProperties({
   setNewOptionText,
   isFirst,
   isLast,
+  allFields = [],
 }) {
   const [tab, setTab] = useState("general");
   const [dragOptionIdx, setDragOptionIdx] = useState(null);
+  const [openFormulaBuilder, setOpenFormulaBuilder] = useState(false);
+  const [openLookupBuilder, setOpenLookupBuilder] = useState(false);
   const type = field?.field_type || "text";
   const isChoice = CHOICE_TYPES.includes(type);
   const isUpload = UPLOAD_TYPES.includes(type);
   const isLayout = ["heading", "description", "image", "video", "section_divider", "page_break"].includes(type);
-  const hasPlaceholder = ["text", "textarea", "email", "phone", "number", "url", "password", "select", "dropdown", "image", "video", "description"].includes(type);
-  const hasDefaultValue = ["text", "textarea", "email", "phone", "number", "url", "password", "date", "time", "yes_no"].includes(type);
-  const isTextInput = ["text", "textarea", "email", "phone", "url", "password"].includes(type);
+  const hasPlaceholder = ["text", "textarea", "email", "phone", "number", "url", "password", "lookup", "select", "dropdown", "image", "video", "description"].includes(type);
+  const hasDefaultValue = ["text", "textarea", "email", "phone", "number", "url", "password", "lookup", "date", "time", "yes_no"].includes(type);
+  const isTextInput = ["text", "textarea", "email", "phone", "url", "password", "lookup"].includes(type);
   const isNumberInput = type === "number";
   const isDateTimeInput = ["date", "time"].includes(type);
   const isRatingOrScale = ["rating", "linear_scale"].includes(type);
@@ -231,32 +243,32 @@ export default function QuestionProperties({
           <Stack direction="row" spacing={0.5}>
             <Tooltip title="Move Up">
               <span>
-                <IconButton size="small" disabled={isFirst} onClick={onMoveUp} sx={{ color: "#C7D2FE", "&:disabled": { color: "#5B4FBB" }, p: 0.4 }}>
-                  <Typography sx={{ fontSize: 11 }}>▲</Typography>
+                <IconButton size="small" disabled={isFirst} onClick={onMoveUp} sx={{ color: "#E0E7FF", "&:disabled": { color: "#818CF8", opacity: 0.4 }, p: 0.4 }}>
+                  <ArrowUpwardRoundedIcon sx={{ fontSize: 15 }} />
                 </IconButton>
               </span>
             </Tooltip>
             <Tooltip title="Move Down">
               <span>
-                <IconButton size="small" disabled={isLast} onClick={onMoveDown} sx={{ color: "#C7D2FE", "&:disabled": { color: "#5B4FBB" }, p: 0.4 }}>
-                  <Typography sx={{ fontSize: 11 }}>▼</Typography>
+                <IconButton size="small" disabled={isLast} onClick={onMoveDown} sx={{ color: "#E0E7FF", "&:disabled": { color: "#818CF8", opacity: 0.4 }, p: 0.4 }}>
+                  <ArrowDownwardRoundedIcon sx={{ fontSize: 15 }} />
                 </IconButton>
               </span>
             </Tooltip>
             <Tooltip title="Duplicate">
-              <IconButton size="small" onClick={onDuplicate} sx={{ color: "#C7D2FE", p: 0.4 }}>
-                <Typography sx={{ fontSize: 11 }}>⎘</Typography>
+              <IconButton size="small" onClick={onDuplicate} sx={{ color: "#E0E7FF", p: 0.4 }}>
+                <FileCopyRoundedIcon sx={{ fontSize: 14 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="Delete question">
-              <IconButton size="small" onClick={onDelete} sx={{ color: "#FCA5A5", p: 0.4 }}>
-                <DeleteOutlineRoundedIcon sx={{ fontSize: 14 }} />
+              <IconButton size="small" onClick={onDelete} sx={{ color: "#FCA5A5", p: 0.4, "&:hover": { bgcolor: "rgba(239, 68, 68, 0.2)" } }}>
+                <DeleteOutlineRoundedIcon sx={{ fontSize: 15 }} />
               </IconButton>
             </Tooltip>
             {onClose && (
               <Tooltip title="Close Panel">
-                <IconButton size="small" onClick={onClose} sx={{ color: "#C7D2FE", p: 0.4, ml: 0.5 }}>
-                  <Typography sx={{ fontSize: 12, fontWeight: 700 }}>✕</Typography>
+                <IconButton size="small" onClick={onClose} sx={{ color: "#E0E7FF", p: 0.4, ml: 0.5, "&:hover": { bgcolor: "rgba(255, 255, 255, 0.15)" } }}>
+                  <CloseRoundedIcon sx={{ fontSize: 15 }} />
                 </IconButton>
               </Tooltip>
             )}
@@ -375,6 +387,116 @@ export default function QuestionProperties({
                   sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2, fontSize: "0.83rem" } }}
                 />
               </FieldRow>
+            )}
+
+            {/* Formula Field Settings */}
+            {type === "formula" && (
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 2.5, bgcolor: "#EEF2FF", border: "1px solid #C7D2FE" }}>
+                <Box display="flex" alignItems="center" gap={1} mb={1}>
+                  <CalculateRoundedIcon sx={{ color: "#4F46E5", fontSize: 20 }} />
+                  <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#3730A3", fontSize: "0.82rem" }}>
+                    Mathematical Formula
+                  </Typography>
+                </Box>
+
+                <Typography variant="body2" sx={{ color: "#4338CA", fontSize: "0.76rem", mb: 1.5, fontFamily: "monospace", wordBreak: "break-all" }}>
+                  {field.formula_expression || "No formula defined yet"}
+                </Typography>
+
+                <Button
+                  fullWidth
+                  variant="contained"
+                  size="small"
+                  startIcon={<FunctionsRoundedIcon />}
+                  onClick={() => setOpenFormulaBuilder(true)}
+                  sx={{
+                    borderRadius: 2,
+                    fontWeight: 800,
+                    fontSize: "0.78rem",
+                    textTransform: "none",
+                    background: "linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)",
+                    boxShadow: "0 4px 12px rgba(79, 70, 229, 0.30)",
+                  }}
+                >
+                  Configure Formula
+                </Button>
+              </Paper>
+            )}
+
+            {/* Dynamic API Lookup Settings */}
+            {(type === "lookup" || ["text", "number", "email", "phone"].includes(type)) && (
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 2.5,
+                  bgcolor: type === "lookup" ? "#F5F3FF" : "#F8FAFC",
+                  border: type === "lookup" ? "1.5px solid #C4B5FD" : "1px solid #E2E8F0",
+                }}
+              >
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <SearchRoundedIcon sx={{ color: "#7C3AED", fontSize: 20 }} />
+                    <Typography variant="subtitle2" fontWeight={800} sx={{ color: "#5B21B6", fontSize: "0.82rem" }}>
+                      Dynamic API Lookup
+                    </Typography>
+                  </Box>
+                  {field.lookup_config && (
+                    <Chip
+                      label="Configured"
+                      size="small"
+                      sx={{
+                        height: 20,
+                        fontSize: "0.68rem",
+                        fontWeight: 700,
+                        bgcolor: "#EDE9FE",
+                        color: "#6D28D9",
+                        border: "1px solid #DDD6FE",
+                      }}
+                    />
+                  )}
+                </Box>
+
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "#6D28D9",
+                    fontSize: "0.75rem",
+                    mb: 1.5,
+                    fontFamily: "monospace",
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {(() => {
+                    try {
+                      if (!field.lookup_config) return "Configure external REST API to auto-fill fields";
+                      const parsed = typeof field.lookup_config === "string" ? JSON.parse(field.lookup_config) : field.lookup_config;
+                      return parsed?.endpoint ? `API: ${parsed.endpoint}` : "Configure external REST API to auto-fill fields";
+                    } catch {
+                      return "Configure external REST API to auto-fill fields";
+                    }
+                  })()}
+                </Typography>
+
+                <Button
+                  fullWidth
+                  variant="contained"
+                  size="small"
+                  startIcon={<TuneRoundedIcon />}
+                  onClick={() => setOpenLookupBuilder(true)}
+                  sx={{
+                    borderRadius: 2,
+                    fontWeight: 800,
+                    fontSize: "0.78rem",
+                    textTransform: "none",
+                    background: "linear-gradient(135deg, #7C3AED 0%, #4F46E5 100%)",
+                    boxShadow: "0 4px 12px rgba(124, 58, 237, 0.30)",
+                    "&:hover": { background: "linear-gradient(135deg, #6D28D9 0%, #4338CA 100%)" },
+                  }}
+                >
+                  Configure API Lookup
+                </Button>
+              </Paper>
             )}
 
             {/* Description */}
@@ -811,6 +933,31 @@ export default function QuestionProperties({
           }}
         />
       </Box>
+
+      {/* Formula Builder Dialog */}
+      <FormulaBuilderDialog
+        open={openFormulaBuilder}
+        onClose={() => setOpenFormulaBuilder(false)}
+        field={field}
+        allFields={allFields}
+        onSave={(res) => {
+          change("formula_expression", res.formula_expression);
+          change("decimal_places", res.decimal_places);
+          change("number_prefix", res.number_prefix);
+          change("number_suffix", res.number_suffix);
+        }}
+      />
+
+      {/* Dynamic API Lookup Config Dialog */}
+      <LookupConfigDialog
+        open={openLookupBuilder}
+        onClose={() => setOpenLookupBuilder(false)}
+        field={field}
+        allFields={allFields}
+        onSave={(lookupConfigStr) => {
+          change("lookup_config", lookupConfigStr);
+        }}
+      />
     </Paper>
   );
 }

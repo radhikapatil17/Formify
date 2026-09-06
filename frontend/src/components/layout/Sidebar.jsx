@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Box,
@@ -10,6 +11,7 @@ import {
   Avatar,
   IconButton,
   Tooltip,
+  useTheme,
 } from "@mui/material";
 import toast from "react-hot-toast";
 
@@ -85,16 +87,30 @@ function getInitials(name) {
 export default function Sidebar({ collapsed = false, onToggleCollapse, onItemClick }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
 
-  // Derive user info from stored JWT
+  // Derive user info from stored JWT & LocalStorage
   const token = localStorage.getItem("token");
   const payload = decodeToken(token);
-  const userName = payload?.name || payload?.sub?.split("@")[0] || "User";
   const userEmail = payload?.sub || "";
-  const userInitials = getInitials(userName);
+
+  const initialName = localStorage.getItem("user_name") || payload?.name || payload?.sub?.split("@")[0] || "User";
+  const [displayName, setDisplayName] = useState(initialName);
+  const userInitials = getInitials(displayName);
+
+  useEffect(() => {
+    const handleProfileUpdate = () => {
+      const updated = localStorage.getItem("user_name");
+      if (updated) setDisplayName(updated);
+    };
+    window.addEventListener("profile-updated", handleProfileUpdate);
+    return () => window.removeEventListener("profile-updated", handleProfileUpdate);
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("user_name");
     toast.success("Logged out successfully");
     navigate("/login");
   };
@@ -139,11 +155,11 @@ export default function Sidebar({ collapsed = false, onToggleCollapse, onItemCli
             src="/formify-logo.jpg"
             alt="Formify Logo"
             sx={{
-              width: 34,
-              height: 34,
-              borderRadius: 2,
-              objectFit: "cover",
-              boxShadow: "0 2px 10px rgba(79, 70, 229, 0.15)",
+              height: 36,
+              width: "auto",
+              maxWidth: 42,
+              objectFit: "contain",
+              borderRadius: 1,
             }}
           />
           {!collapsed && (
@@ -220,23 +236,33 @@ export default function Sidebar({ collapsed = false, onToggleCollapse, onItemCli
                 py: 1.25,
                 px: collapsed ? 1.5 : 2,
                 justifyContent: collapsed ? "center" : "flex-start",
-                color: isActive ? "#4F46E5" : "#64748B",
-                bgcolor: isActive ? "#EEF2FF" : "transparent",
+                color: isActive
+                  ? isDark ? "#818CF8" : "#4F46E5"
+                  : isDark ? "#94A3B8" : "#64748B",
+                bgcolor: isActive
+                  ? isDark ? "rgba(99, 102, 241, 0.15)" : "#EEF2FF"
+                  : "transparent",
                 fontWeight: isActive ? 700 : 500,
                 position: "relative",
                 transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                 "& .MuiListItemIcon-root": {
-                  color: isActive ? "#4F46E5" : "#94A3B8",
+                  color: isActive
+                    ? isDark ? "#818CF8" : "#4F46E5"
+                    : isDark ? "#64748B" : "#94A3B8",
                   minWidth: collapsed ? 0 : 36,
                   justifyContent: "center",
                   transition: "all 0.2s ease",
                 },
                 "&:hover": {
-                  bgcolor: isActive ? "#EEF2FF" : "#F8FAFC",
-                  color: isActive ? "#4F46E5" : "#0F172A",
+                  bgcolor: isActive
+                    ? isDark ? "rgba(99, 102, 241, 0.2)" : "#EEF2FF"
+                    : isDark ? "rgba(99, 102, 241, 0.08)" : "#F8FAFC",
+                  color: isActive
+                    ? isDark ? "#818CF8" : "#4F46E5"
+                    : isDark ? "#E2E8F0" : "#0F172A",
                   transform: collapsed ? "none" : "translateX(3px)",
                   "& .MuiListItemIcon-root": {
-                    color: "#4F46E5",
+                    color: isDark ? "#818CF8" : "#4F46E5",
                     transform: "scale(1.1)",
                   },
                 },
@@ -251,9 +277,11 @@ export default function Sidebar({ collapsed = false, onToggleCollapse, onItemCli
                     top: "20%",
                     bottom: "20%",
                     width: 4,
-                    bgcolor: "#4F46E5",
+                    bgcolor: isDark ? "#818CF8" : "#4F46E5",
                     borderRadius: "0 4px 4px 0",
-                    boxShadow: "0 0 8px rgba(79, 70, 229, 0.4)",
+                    boxShadow: isDark
+                      ? "0 0 8px rgba(129, 140, 248, 0.5)"
+                      : "0 0 8px rgba(79, 70, 229, 0.4)",
                   }}
                 />
               )}
@@ -330,7 +358,7 @@ export default function Sidebar({ collapsed = false, onToggleCollapse, onItemCli
         }}
       >
         {collapsed ? (
-          <Tooltip title={`${userName} (${userEmail})`} placement="right">
+          <Tooltip title={`${displayName} (${userEmail})`} placement="right">
             <Avatar
               sx={{
                 width: 36,
@@ -372,7 +400,7 @@ export default function Sidebar({ collapsed = false, onToggleCollapse, onItemCli
                   noWrap
                   sx={{ fontSize: "0.835rem", color: "#0F172A", lineHeight: 1.2 }}
                 >
-                  {userName}
+                  {displayName}
                 </Typography>
                 <Typography
                   variant="caption"

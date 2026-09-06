@@ -22,7 +22,8 @@ import GoogleIcon from "@mui/icons-material/Google";
 
 import api from "../../api/api";
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const rawClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || "").replace(/['"]/g, "").trim();
+const GOOGLE_CLIENT_ID = rawClientId;
 const IS_REAL_GOOGLE_CONFIGURED =
   GOOGLE_CLIENT_ID &&
   GOOGLE_CLIENT_ID !== "YOUR_GOOGLE_CLIENT_ID_HERE" &&
@@ -105,11 +106,11 @@ export default function RegisterForm() {
           src="/formify-logo.jpg"
           alt="Formify Logo"
           sx={{
-            height: 44,
+            height: 52,
             width: "auto",
+            objectFit: "contain",
             borderRadius: 1.2,
             mb: 1.8,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
           }}
         />
         <Typography
@@ -310,18 +311,41 @@ export default function RegisterForm() {
               endAdornment: (
                 <InputAdornment position="end">
                   <IconButton
-                    onClick={() => setShowPassword(!showPassword)}
+                    onClick={() => setShowPassword((prev) => !prev)}
                     edge="end"
                     size="small"
+                    aria-label="toggle password visibility"
+                    sx={{ color: "#64748B", "&:hover": { color: "#4F46E5" } }}
                   >
                     {showPassword ? (
-                      <VisibilityOffRoundedIcon sx={{ fontSize: 16 }} />
+                      <VisibilityOffRoundedIcon sx={{ fontSize: 18 }} />
                     ) : (
-                      <VisibilityRoundedIcon sx={{ fontSize: 16 }} />
+                      <VisibilityRoundedIcon sx={{ fontSize: 18 }} />
                     )}
                   </IconButton>
                 </InputAdornment>
               ),
+            }}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      edge="end"
+                      size="small"
+                      aria-label="toggle password visibility"
+                      sx={{ color: "#64748B", "&:hover": { color: "#4F46E5" } }}
+                    >
+                      {showPassword ? (
+                        <VisibilityOffRoundedIcon sx={{ fontSize: 18 }} />
+                      ) : (
+                        <VisibilityRoundedIcon sx={{ fontSize: 18 }} />
+                      )}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
             }}
           />
         </Box>
@@ -354,6 +378,46 @@ export default function RegisterForm() {
             })}
             error={!!errors.confirmPassword}
             helperText={errors.confirmPassword?.message}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    edge="end"
+                    size="small"
+                    aria-label="toggle password visibility"
+                    sx={{ color: "#64748B", "&:hover": { color: "#4F46E5" } }}
+                  >
+                    {showPassword ? (
+                      <VisibilityOffRoundedIcon sx={{ fontSize: 18 }} />
+                    ) : (
+                      <VisibilityRoundedIcon sx={{ fontSize: 18 }} />
+                    )}
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      edge="end"
+                      size="small"
+                      aria-label="toggle password visibility"
+                      sx={{ color: "#64748B", "&:hover": { color: "#4F46E5" } }}
+                    >
+                      {showPassword ? (
+                        <VisibilityOffRoundedIcon sx={{ fontSize: 18 }} />
+                      ) : (
+                        <VisibilityRoundedIcon sx={{ fontSize: 18 }} />
+                      )}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
         </Box>
 
@@ -378,7 +442,7 @@ export default function RegisterForm() {
             component={Link}
             to="/login"
             sx={{
-              color: "secondary.main",
+              color: "primary.main",
               fontWeight: 600,
               textDecoration: "none",
               "&:hover": { textDecoration: "underline" },

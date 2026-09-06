@@ -21,6 +21,7 @@ import {
   MenuItem,
   Tooltip,
   Grid,
+  CircularProgress,
 } from "@mui/material";
 import toast from "react-hot-toast";
 
@@ -101,37 +102,53 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
   const [jsonContent, setJsonContent] = useState("");
   const [validationError, setValidationError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [parsingFile, setParsingFile] = useState(false);
 
   // Parsed Schema State
   const [editTitle, setEditTitle] = useState("");
-  const [editCategory, setEditCategory] = useState("Feedback");
+  const [editCategory, setEditCategory] = useState("General");
   const [editDesc, setEditDesc] = useState("");
   const [questions, setQuestions] = useState([]);
   const [saving, setSaving] = useState(false);
 
-  // Handle File Upload Drop (.json)
-  const processFile = (file) => {
+  // Handle Multi-Format File Upload (PDF, DOCX, Image, CSV/Excel, JSON)
+  const processFile = async (file) => {
     if (!file) return;
 
-    if (!file.name.endsWith(".json")) {
-      setValidationError("Invalid file format. Please upload a valid .json schema file.");
+    if (file.size > 10 * 1024 * 1024) {
+      setValidationError("File size exceeds maximum limit of 10MB.");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const raw = event.target.result;
-        const parsed = JSON.parse(raw);
-        setJsonContent(JSON.stringify(parsed, null, 2));
-        setValidationError(null);
-        toast.success(`Loaded "${file.name}" successfully!`);
-      } catch (err) {
-        setJsonContent(event.target.result);
-        setValidationError(`File uploaded, but JSON has syntax errors: ${err.message}`);
+    setValidationError(null);
+    setParsingFile(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await api.post("/ai/import/parse-document", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      const data = res.data;
+      if (!data || !data.questions || data.questions.length === 0) {
+        setValidationError("Could not detect any questions in the uploaded document. Please check the file.");
+        return;
       }
-    };
-    reader.readAsText(file);
+
+      setEditTitle(data.title || file.name.replace(/\.[^/.]+$/, ""));
+      setEditCategory(data.category || "General");
+      setEditDesc(data.description || "Imported form document");
+      setQuestions(data.questions || []);
+      setStep(2);
+      toast.success(`Extracted ${data.questions.length} questions from "${file.name}"!`);
+    } catch (err) {
+      console.error(err);
+      setValidationError(err.response?.data?.detail || "Failed to process document. Please try a different file.");
+    } finally {
+      setParsingFile(false);
+    }
   };
 
   const handleFileInputChange = (e) => {
@@ -169,7 +186,7 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
     }
   };
 
-  // Validate & Normalize Schema
+  // Validate & Normalize Raw Schema Code
   const handleValidateAndPreview = () => {
     if (!jsonContent.trim()) {
       setValidationError("JSON content cannot be empty. Please upload a file or paste schema code.");
@@ -179,21 +196,18 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
     try {
       const parsed = JSON.parse(jsonContent);
 
-      // Check title / name
       const title = parsed.title || parsed.name || parsed.form_title || parsed.formTitle;
       if (!title) {
         setValidationError("Schema missing required property: 'title' or 'name'.");
         return;
       }
 
-      // Check questions / fields / elements array
       const rawQuestions = parsed.questions || parsed.fields || parsed.elements || parsed.items;
       if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
         setValidationError("Schema missing questions array: 'questions' or 'fields' must be a non-empty array.");
         return;
       }
 
-      // Normalize question items into Formify format
       const normalizedQuestions = rawQuestions.map((q, idx) => ({
         field_label: q.field_label || q.label || q.title || q.name || `Question ${idx + 1}`,
         field_type: (q.field_type || q.type || "text").toLowerCase(),
@@ -201,10 +215,12 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
         options: Array.isArray(q.options) ? q.options : Array.isArray(q.choices) ? q.choices : [],
         placeholder: q.placeholder || "",
         help_text: q.help_text || q.help || "",
+        needs_review: false,
+        uncertainty_reason: null,
       }));
 
       setEditTitle(title);
-      setEditCategory(parsed.category || "Custom");
+      setEditCategory(parsed.category || "General");
       setEditDesc(parsed.description || "Imported custom form schema");
       setQuestions(normalizedQuestions);
       setValidationError(null);
@@ -223,6 +239,7 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
         field_type: "text",
         is_required: true,
         options: ["Option 1", "Option 2"],
+        needs_review: false,
       },
     ]);
   };
@@ -416,40 +433,72 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
                 borderRadius: 3,
                 bgcolor: isDragging ? "#EEF2FF" : "#F8FAFC",
                 textAlign: "center",
-                cursor: "pointer",
+                cursor: parsingFile ? "wait" : "pointer",
                 transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: 1,
+                gap: 1.2,
+                opacity: parsingFile ? 0.7 : 1,
                 "&:hover": {
                   bgcolor: "#F1F5F9",
                   borderColor: "#6366F1",
                 },
               }}
             >
-              <input type="file" accept=".json" hidden onChange={handleFileInputChange} />
-              <Box
-                sx={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  bgcolor: "#EEF2FF",
-                  color: "#4F46E5",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <FileUploadRoundedIcon sx={{ fontSize: 24 }} />
-              </Box>
-              <Typography variant="body2" fontWeight={800} sx={{ color: "#0F172A" }}>
-                Click to upload, or drag &amp; drop a <code>.json</code> schema file
-              </Typography>
-              <Typography variant="caption" sx={{ color: "#64748B" }}>
-                Supports Formify JSON, custom schemas, or standard form definitions
-              </Typography>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.csv,.xlsx,.xls,.json"
+                hidden
+                onChange={handleFileInputChange}
+                disabled={parsingFile}
+              />
+
+              {parsingFile ? (
+                <Box display="flex" flexDirection="column" alignItems="center" gap={1} py={1}>
+                  <CircularProgress size={32} thickness={4} sx={{ color: "#4F46E5" }} />
+                  <Typography variant="body2" fontWeight={700} sx={{ color: "#4F46E5" }}>
+                    Parsing Document with AI...
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Extracting title, questions, field types, and options from uploaded file
+                  </Typography>
+                </Box>
+              ) : (
+                <>
+                  <Box
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: "50%",
+                      bgcolor: "#EEF2FF",
+                      color: "#4F46E5",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <FileUploadRoundedIcon sx={{ fontSize: 24 }} />
+                  </Box>
+                  <Typography variant="body2" fontWeight={800} sx={{ color: "#0F172A" }}>
+                    Click to upload, or drag &amp; drop a document file
+                  </Typography>
+
+                  {/* Supported Format Chips */}
+                  <Stack direction="row" spacing={0.6} flexWrap="wrap" justifyContent="center">
+                    <Chip label="📄 PDF" size="small" sx={{ fontSize: "0.68rem", fontWeight: 700, bgcolor: "#EEF2FF", color: "#4F46E5" }} />
+                    <Chip label="📝 Word (DOCX)" size="small" sx={{ fontSize: "0.68rem", fontWeight: 700, bgcolor: "#F0F9FF", color: "#0284C7" }} />
+                    <Chip label="🖼️ Images (JPG/PNG)" size="small" sx={{ fontSize: "0.68rem", fontWeight: 700, bgcolor: "#FDF2F8", color: "#DB2777" }} />
+                    <Chip label="📊 CSV / Excel" size="small" sx={{ fontSize: "0.68rem", fontWeight: 700, bgcolor: "#ECFDF5", color: "#059669" }} />
+                    <Chip label="⚙️ Schema JSON" size="small" sx={{ fontSize: "0.68rem", fontWeight: 700, bgcolor: "#FEF3C7", color: "#D97706" }} />
+                  </Stack>
+
+                  <Typography variant="caption" sx={{ color: "#64748B" }}>
+                    Automatically detects form title, sections, questions, types &amp; options (Max 10MB)
+                  </Typography>
+                </>
+              )}
             </Paper>
 
             {/* Code Editor Box Header */}
@@ -523,19 +572,22 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
                   setJsonContent(e.target.value);
                   setValidationError(null);
                 }}
-                placeholder={`{\n  "title": "Customer Feedback",\n  "category": "Feedback",\n  "questions": [\n    { "field_label": "Full Name", "field_type": "text", "is_required": true }\n  ]\n}`}
+                placeholder={`// Paste your Formify JSON schema or custom form definitions here...\n${SAMPLE_JSON_STRING}`}
                 variant="standard"
                 InputProps={{
                   disableUnderline: true,
                   sx: {
-                    p: 2,
-                    bgcolor: "#0F172A",
-                    color: "#F8FAFC",
-                    fontFamily: '"Fira Code", "Cascadia Code", Consolas, monospace',
-                    fontSize: "0.825rem",
-                    lineHeight: 1.5,
-                    "& textarea": {
+                    "& .MuiInputBase-root": {
+                      borderRadius: 0,
+                      p: 2,
+                      bgcolor: "#0F172A",
                       color: "#F8FAFC",
+                      fontFamily: '"Fira Code", "Cascadia Code", Consolas, monospace',
+                      fontSize: "0.825rem",
+                      lineHeight: 1.5,
+                      "& textarea": {
+                        color: "#F8FAFC",
+                      },
                     },
                   },
                 }}
@@ -548,17 +600,17 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
         {step === 2 && (
           <Box display="flex" flexDirection="column" gap={2.5}>
             <Alert severity="success" icon={<CheckCircleRoundedIcon sx={{ fontSize: 20 }} />} sx={{ borderRadius: 2.5 }}>
-              Schema parsed successfully! Review metadata and fields below before importing into your workspace.
+              Form document parsed successfully! Review detected fields, edit types &amp; confirm before importing.
             </Alert>
 
             <Paper elevation={0} sx={{ p: 2.5, bgcolor: "#F8FAFC", borderRadius: 3, border: "1px solid #E2E8F0" }}>
               <Typography variant="caption" fontWeight={800} color="text.secondary" sx={{ textTransform: "uppercase", display: "block", mb: 1.5, color: "#64748B" }}>
-                Template Metadata
+                Form Metadata
               </Typography>
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={8}>
                   <TextField
-                    label="Template Title"
+                    label="Form Title"
                     fullWidth
                     size="small"
                     value={editTitle}
@@ -590,7 +642,7 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
 
             <Box display="flex" justifyContent="space-between" alignItems="center">
               <Typography variant="body1" fontWeight={800} sx={{ color: "#0F172A" }}>
-                Form Questions ({questions.length})
+                Detected Questions ({questions.length})
               </Typography>
               <Button
                 size="small"
@@ -627,6 +679,17 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
                         <MenuItem key={t} value={t}>{t}</MenuItem>
                       ))}
                     </TextField>
+
+                    {q.needs_review && (
+                      <Tooltip title={q.uncertainty_reason || "Uncertain question structure. Please review."}>
+                        <Chip
+                          label="⚠️ Needs Review"
+                          size="small"
+                          sx={{ fontWeight: 700, bgcolor: "#FFFBEB", color: "#D97706", border: "1px solid #FDE68A" }}
+                        />
+                      </Tooltip>
+                    )}
+
                     <Tooltip title="Delete Field">
                       <IconButton size="small" onClick={() => handleDeleteQuestion(idx)} sx={{ color: "#EF4444" }}>
                         <DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} />
@@ -647,14 +710,20 @@ export default function ImportTemplateModal({ open, onClose, onTemplateImported 
                       label={<Typography variant="caption" fontWeight={600} sx={{ color: "#475569" }}>Required Question</Typography>}
                     />
 
-                    {["select", "radio", "checkbox"].includes(q.field_type) && q.options && q.options.length > 0 && (
+                    {["select", "radio", "checkbox"].includes(q.field_type) && (
                       <Stack direction="row" spacing={0.5} flexWrap="wrap" alignItems="center">
                         <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ mr: 0.5 }}>
                           Choices:
                         </Typography>
-                        {q.options.map((opt, optIdx) => (
-                          <Chip key={optIdx} label={opt} size="small" variant="outlined" sx={{ fontSize: "0.65rem", height: 20 }} />
-                        ))}
+                        {q.options && q.options.length > 0 ? (
+                          q.options.map((opt, optIdx) => (
+                            <Chip key={optIdx} label={opt} size="small" variant="outlined" sx={{ fontSize: "0.65rem", height: 20 }} />
+                          ))
+                        ) : (
+                          <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                            (No options added yet)
+                          </Typography>
+                        )}
                       </Stack>
                     )}
                   </Box>

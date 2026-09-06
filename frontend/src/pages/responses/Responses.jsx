@@ -44,9 +44,12 @@ import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlin
 import AssignmentTurnedInRoundedIcon from "@mui/icons-material/AssignmentTurnedInRounded";
 import PendingActionsRoundedIcon from "@mui/icons-material/PendingActionsRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 
 import api from "../../api/api";
 import StatCard from "../../components/dashboard/StatCard";
+import PageHeader from "../../components/common/PageHeader";
+import AIResponseInsightsModal from "../../components/analytics/AIResponseInsightsModal";
 
 function formatDate(dateString) {
   if (!dateString) return "—";
@@ -99,6 +102,7 @@ export default function Responses() {
   // Dialog Modals
   const [openViewModal, setOpenViewModal] = useState(false);
   const [openDeleteModal, setOpenDeleteModal] = useState(false);
+  const [openInsightsModal, setOpenInsightsModal] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
 
   // Load User Forms List for Dropdown Selector
@@ -341,132 +345,126 @@ export default function Responses() {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3.5, pb: 6, width: "100%" }}>
-      {/* ─────────────────────────────────────────────────────────────
-          1. HEADER BAR & CONTROLS
-         ───────────────────────────────────────────────────────────── */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
-        <Box>
-          <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: "-0.03em", color: "#0F172A" }}>
-            Responses
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.3, color: "#64748B" }}>
-            View and manage form submissions
-          </Typography>
-        </Box>
+      <PageHeader
+        title="Responses"
+        subtitle="View and manage all form submissions"
+        actions={
+          <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center">
+            {/* Form Selector Dropdown */}
+            <TextField
+              select
+              size="small"
+              value={selectedFormId}
+              onChange={(e) => {
+                setSelectedFormId(e.target.value);
+                setSearchParams(e.target.value ? { formId: e.target.value } : {});
+                setPage(1);
+              }}
+              sx={{ minWidth: 180, bgcolor: "background.paper", borderRadius: 2 }}
+              SelectProps={{
+                sx: { fontWeight: 600, fontSize: "0.85rem" }
+              }}
+            >
+              <MenuItem value="">All Forms ({forms.length})</MenuItem>
+              {forms.map((f) => (
+                <MenuItem key={f.id} value={String(f.id)}>
+                  {f.title}
+                </MenuItem>
+              ))}
+            </TextField>
 
-        {/* Header Action Controls */}
-        <Stack direction="row" spacing={1.5} flexWrap="wrap" alignItems="center">
-          {/* Form Selector Dropdown */}
-          <TextField
-            select
-            size="small"
-            value={selectedFormId}
-            onChange={(e) => {
-              setSelectedFormId(e.target.value);
-              setSearchParams(e.target.value ? { formId: e.target.value } : {});
-              setPage(1);
-            }}
-            sx={{ minWidth: 200, bgcolor: "#FFFFFF", borderRadius: 2 }}
-            SelectProps={{
-              sx: { fontWeight: 700, fontSize: "0.85rem" }
-            }}
-          >
-            <MenuItem value="">All Forms ({forms.length})</MenuItem>
-            {forms.map((f) => (
-              <MenuItem key={f.id} value={String(f.id)}>
-                {f.title}
-              </MenuItem>
-            ))}
-          </TextField>
+            {/* Search Bar */}
+            <TextField
+              placeholder="Search responses..."
+              size="small"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              sx={{ minWidth: 190, bgcolor: "background.paper" }}
+              InputProps={{
+                startAdornment: <SearchRoundedIcon sx={{ color: "text.disabled", fontSize: 18, mr: 1 }} />,
+              }}
+            />
 
-          {/* Search Bar */}
-          <TextField
-            placeholder="Search responses..."
-            size="small"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            sx={{ minWidth: 200, bgcolor: "#FFFFFF", borderRadius: 2 }}
-            InputProps={{
-              startAdornment: <SearchRoundedIcon sx={{ color: "#94A3B8", fontSize: 18, mr: 1 }} />,
-            }}
-          />
+            {/* Date Range Filter */}
+            <TextField
+              select
+              size="small"
+              value={dateRange}
+              onChange={(e) => { setDateRange(e.target.value); setPage(1); }}
+              sx={{ minWidth: 130, bgcolor: "background.paper" }}
+              SelectProps={{ sx: { fontWeight: 600, fontSize: "0.85rem" } }}
+            >
+              <MenuItem value="all">All Time</MenuItem>
+              <MenuItem value="7d">Last 7 Days</MenuItem>
+              <MenuItem value="30d">Last 30 Days</MenuItem>
+              <MenuItem value="90d">Last 90 Days</MenuItem>
+            </TextField>
 
-          {/* Date Range Filter */}
-          <TextField
-            select
-            size="small"
-            value={dateRange}
-            onChange={(e) => {
-              setDateRange(e.target.value);
-              setPage(1);
-            }}
-            sx={{ minWidth: 130, bgcolor: "#FFFFFF", borderRadius: 2 }}
-            SelectProps={{
-              sx: { fontWeight: 600, fontSize: "0.85rem" }
-            }}
-          >
-            <MenuItem value="all">All Time</MenuItem>
-            <MenuItem value="7d">Last 7 Days</MenuItem>
-            <MenuItem value="30d">Last 30 Days</MenuItem>
-            <MenuItem value="90d">Last 90 Days</MenuItem>
-          </TextField>
+            {/* Status Filter */}
+            <TextField
+              select
+              size="small"
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              sx={{ minWidth: 130, bgcolor: "background.paper" }}
+              SelectProps={{ sx: { fontWeight: 600, fontSize: "0.85rem" } }}
+            >
+              <MenuItem value="all">All Status</MenuItem>
+              <MenuItem value="complete">Complete</MenuItem>
+              <MenuItem value="partial">Partial</MenuItem>
+            </TextField>
 
-          {/* Status Filter */}
-          <TextField
-            select
-            size="small"
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              setPage(1);
-            }}
-            sx={{ minWidth: 130, bgcolor: "#FFFFFF", borderRadius: 2 }}
-            SelectProps={{
-              sx: { fontWeight: 600, fontSize: "0.85rem" }
-            }}
-          >
-            <MenuItem value="all">All Status</MenuItem>
-            <MenuItem value="complete">Complete</MenuItem>
-            <MenuItem value="partial">Partial</MenuItem>
-          </TextField>
+            {/* Refresh */}
+            <Tooltip title="Refresh">
+              <span>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<RefreshRoundedIcon sx={{ fontSize: 16 }} />}
+                  onClick={loadSubmissionsData}
+                  disabled={reloading}
+                  sx={{ fontWeight: 600, fontSize: "0.8rem" }}
+                >
+                  Refresh
+                </Button>
+              </span>
+            </Tooltip>
 
-          {/* Refresh Button */}
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<RefreshRoundedIcon sx={{ fontSize: 16 }} />}
-            onClick={loadSubmissionsData}
-            disabled={reloading}
-            sx={{ fontWeight: 600, fontSize: "0.8rem", textTransform: "none", borderColor: "#E2E8F0" }}
-          >
-            Refresh
-          </Button>
+            {/* Export CSV */}
+            <Button
+              variant="outlined"
+              color="primary"
+              size="small"
+              startIcon={<FileDownloadRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => handleExportCSV()}
+              disabled={exporting || submissions.length === 0}
+              sx={{ fontWeight: 600, fontSize: "0.8rem" }}
+            >
+              Export CSV
+            </Button>
 
-          {/* Export CSV Button */}
-          <Button
-            variant="contained"
-            color="primary"
-            size="small"
-            startIcon={<FileDownloadRoundedIcon sx={{ fontSize: 18 }} />}
-            onClick={() => handleExportCSV()}
-            disabled={exporting || submissions.length === 0}
-            sx={{
-              fontWeight: 600,
-              fontSize: "0.8rem",
-              textTransform: "none",
-              px: 2.5,
-              py: 0.8,
-              borderRadius: 2,
-              boxShadow: "0 4px 14px rgba(15, 23, 42, 0.15)",
-            }}
-          >
-            Export CSV
-          </Button>
-        </Stack>
-      </Box>
+            {/* AI Insights */}
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => setOpenInsightsModal(true)}
+              sx={{
+                fontWeight: 700,
+                fontSize: "0.8rem",
+                background: "linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)",
+                "&:hover": { background: "linear-gradient(135deg, #4338CA 0%, #6D28D9 100%)" },
+              }}
+            >
+              AI Insights
+            </Button>
+          </Stack>
+        }
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           2. SUMMARY KPI STRIP (ALL REAL POSTGRESQL NUMBERS)
@@ -969,6 +967,14 @@ export default function Responses() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* AI Response Insights Dashboard Modal */}
+      <AIResponseInsightsModal
+        open={openInsightsModal}
+        onClose={() => setOpenInsightsModal(false)}
+        formId={selectedFormId}
+        formTitle={forms.find((f) => String(f.id) === String(selectedFormId))?.title}
+      />
     </Box>
   );
 }
