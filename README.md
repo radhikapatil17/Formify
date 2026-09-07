@@ -4,7 +4,6 @@
 [![Frontend](https://img.shields.io/badge/Frontend-Netlify-00C7B7?style=flat-square&logo=netlify)](https://formify-studio.netlify.app)
 [![Backend](https://img.shields.io/badge/Backend-Render-46E3B7?style=flat-square&logo=render)](https://formify-ljk2.onrender.com)
 [![Database](https://img.shields.io/badge/Database-Neon%20PostgreSQL-00E599?style=flat-square&logo=postgresql)](https://neon.tech)
-[![License](https://img.shields.io/badge/License-MIT-blue.style=flat-square)](#-license)
 
 **Formify** is an enterprise-grade, modern, and intelligent form builder and survey collection platform. Powered by **React**, **FastAPI**, **Neon PostgreSQL**, and **Google Gemini AI**, Formify allows creators to design interactive questionnaires, configure conditional logic rules, perform cross-field math formulas, trigger secure external API lookups, collaborate with teams, and analyze respondent submissions in real-time.
 
